@@ -1,0 +1,116 @@
+---
+title: "AI - Simulation, Power Estimate"
+author: "Chet Gutwein"
+date: "March 27, 2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# W241 - Artificial Intelligence Final Project
+  
+## Investigation into Statistical Power for prior to survey launch
+
+## Making some assumptions in order to carry out simulation
+
+ 1.) Even distribution of total response for each question with variance of 1.2
+ 2.) Estimating effect size between 0.1 and 0.3
+ 3.) Targeting 1,000 subjects: 500 control, 500 treatment for each question (in our experiment this is really going to be 400 control and 600 treatment - but easier to do the simulation with an even split)
+ 4.) outcome variable is a score on a diverging scale from 1 to 5, with 3 being neutral.
+ 
+```{r}
+#Defining variables
+n_total <- 1000
+sigma2 <- 1.2
+```
+
+Defining control values for 1000 subjects.
+
+```{r}
+#Default control values
+po.control <- round(rnorm(n_total, 3, sigma2))
+po.control[po.control < 1] = 1
+#sum(po.control > 5)
+po.control[po.control > 5] = 5
+po.control <- abs(3-po.control) # normalizing here for distance from 3/neutral
+hist(po.control,3)
+mean(po.control)
+var(po.control)
+```
+
+Defining hypothetical treatment values for 1000 subjects.
+
+```{r}
+#Default treatment values
+t_1 <- -0.2
+po.treatment <- round(rnorm(n_total, mean(po.control) + t_1, var(po.control)))
+sum(po.treatment > 2)
+sum(po.treatment < 0)
+po.treatment[po.treatment < 0] = 0
+po.treatment[po.treatment > 2] = 2
+hist(po.treatment,3)
+mean(po.treatment)
+var(po.treatment)
+```
+
+```{r}
+#Randomize control and treatment vector
+randomize <- function() sample(c(rep(0,500), rep(1, 500)))
+est.ate <- function(outcome, treat) mean(outcome[treat==1]) - mean(outcome[treat==0]) 
+```
+
+```{r}
+treatment <- randomize()
+outcomes <- po.treatment * treatment + po.control*(1-treatment) 
+ate <- est.ate(outcomes, treatment)
+
+est.ate(outcomes, randomize())
+est.ate(outcomes, randomize())
+est.ate(outcomes, randomize())
+
+distribution_01 <- replicate(5000, est.ate(outcomes, randomize())) 
+plot(density(distribution_01))
+abline(v=ate)
+mean(ate <= distribution_01)
+```
+
+```{r}
+simulate.study <- function(t_1){ 
+  po.control <- round(rnorm(1000, 3, 1.2))
+  po.control[po.control < 1] = 1
+  po.control[po.control > 5] = 5
+  po.control <- abs(3-po.control) 
+  po.treatment <- round(rnorm(1000, mean(po.control) + t_1, var(po.control)))
+  po.treatment[po.treatment < 0] = 0
+  po.treatment[po.treatment > 2] = 2 
+  treatment <- randomize() 
+  outcomes <-  po.treatment * treatment + po.control * (1-treatment) 
+  ate <- est.ate(outcomes, treatment) 
+  distribution.under.sharp.null <- replicate(1000, est.ate(outcomes, randomize())) 
+  return(mean(ate > distribution.under.sharp.null)) 
+} 
+```
+
+## Getting Power for different ATE values
+
+```{r}
+pvals_0 <- replicate(1000, simulate.study(0))
+plot(density(pvals_0)) 
+mean(pvals_0 < 0.05)
+```
+
+```{r}
+pvals_1 <- replicate(1000, simulate.study(-0.1))
+plot(density(pvals_1)) 
+mean(pvals_1 < 0.05)
+```
+
+```{r}
+pvals_2 <- replicate(1000, simulate.study(-0.2))
+plot(density(pvals_2)) 
+mean(pvals_2 < 0.05)
+```
+
+

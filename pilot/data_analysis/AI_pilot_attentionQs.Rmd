@@ -1,0 +1,121 @@
+---
+title: "AI_project_attentionQ"
+author: "Chet Gutwein"
+date: "March 28, 2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Are Our Attention Questions Effective?
+
+From the EDA (reference file "AI_project_data_clean_v2.Rmd"), we see quite a variety of response rates to the attention questions that were provided in the pilot version of the survey. To recap:
+
+```{r}
+library(knitr)
+topics <- c("AI Beneficial?", "Undesirable Effects", "Regulatory Oversight", "Jobs", "Recommender Systems")
+r_rates <- c(0.85,0.64, 1.0,0.60,0.55)
+kable(data.frame(topics, r_rates))
+```
+
+It would appear that only one of the topics had a satisfactory response rate, which is *Regulatory Oversight*. With a True/False question, respondants will get the right answer 50% of the time. So...we need response rates to be higher for this to be effective.
+
+If we're to use the attention questions as a strict qualifier for a valid survey, then we would need to weight each attention question to determine a total compliance rate.
+
+```{r}
+(undesireable_nonc <- sum(df$attention_undesirable == 1, na.rm = TRUE)) #correct answer false
+(jobs_nonc <- sum(df$attention_jobs == 0, na.rm = TRUE)) #correct answer true
+(oversight_nonc <- sum(df$attention_oversight == 1, na.rm = TRUE)) #correct answer false
+(beneficial_nonc <- sum(df$attention_beneficial == 0, na.rm = TRUE)) #correct answer true
+(rec_nonc <- sum(df$attention_recommender == 1, na.rm = TRUE)) #correct answer false
+(nonc_per_1 <- sum(undesireable_nonc,jobs_nonc, oversight_nonc, beneficial_nonc, rec_nonc) / 60)
+```
+
+
+## Time to Complete Survey
+Another way to measure whether or not respondants are paying attention is tracking how long it took them to take the survey. We also have data on this from EDA, but it's worth including the histogram of survey length.
+
+"Median for finishing the survey is 153 sec (~ 2.5 mins), minimum is 27 secs, maximum 1491 sec (~25 mins). Most people finish the survey 2-3 mins, most finish within 5 mins."
+
+```{r}
+df <- read.csv('./pilot_cleaned.csv')
+hist(df$duration_seconds, breaks=25)
+```
+
+Anecdotally, I just took the survey at what I would consider a reasonable pace to read each question completely and record a response. It took me 2.5 minutes to complete the survey. Maybe there are some really fast readers that can complete this in 2 minutes. So, using 120 seconds as a benchmark, let's calculate how many 'noncompliers' there are based on this measure.
+
+```{r}
+never_takers <- sum(df$duration_seconds <=120)
+total <- sum(df$duration_seconds > 0)
+nonc_per_120 <- never_takers/total
+```
+
+So, if we were to use a threshold of 120 seconds minimum for a valid survey, the pilot study suggests we would have a non-compliance rate of `r never_takers/total`.
+
+## Correlation Between Both Sets of Noncompliers?
+
+Does our intuition that subjects taking less than the requisite amount of time to complete the survey match up with the success rate of attention question responses?
+
+We'll pare down the subjects to only those who took less than 120 seconds to complete the survey.
+```{r}
+df_120 <- df[df$duration_seconds <= 120 ,]
+```
+
+Then, we can repeat the count of wrong responses to attention questions
+
+```{r}
+(undesireable_nonc <- sum(df_120$attention_undesirable == 1, na.rm = TRUE)) #correct answer false
+(jobs_nonc <- sum(df_120$attention_jobs == 0, na.rm = TRUE)) #correct answer true
+(oversight_nonc <- sum(df_120$attention_oversight == 1, na.rm = TRUE)) #correct answer false
+(beneficial_nonc <- sum(df_120$attention_beneficial == 0, na.rm = TRUE)) #correct answer true
+(rec_nonc <- sum(df_120$attention_recommender == 1, na.rm = TRUE)) #correct answer false
+(nonc_per_1 <- sum(undesireable_nonc,jobs_nonc, oversight_nonc, beneficial_nonc, rec_nonc) / 22)
+```
+
+And again for 90 seconds.
+
+```{r}
+df_90 <- df[df$duration_seconds <= 90 ,]
+(undesireable_nonc <- sum(df_90$attention_undesirable == 1, na.rm = TRUE)) #correct answer false
+(jobs_nonc <- sum(df_90$attention_jobs == 0, na.rm = TRUE)) #correct answer true
+(oversight_nonc <- sum(df_90$attention_oversight == 1, na.rm = TRUE)) #correct answer false
+(beneficial_nonc <- sum(df_90$attention_beneficial == 0, na.rm = TRUE)) #correct answer true
+(rec_nonc <- sum(df_90$attention_recommender == 1, na.rm = TRUE)) #correct answer false
+(nonc_per_2 <- sum(undesireable_nonc,jobs_nonc, oversight_nonc, beneficial_nonc, rec_nonc) / 12)
+```
+
+And 60 seconds.
+
+```{r}
+df_60 <- df[df$duration_seconds <= 60 ,]
+(undesireable_nonc <- sum(df_60$attention_undesirable == 1, na.rm = TRUE)) #correct answer false
+(jobs_nonc <- sum(df_60$attention_jobs == 0, na.rm = TRUE)) #correct answer true
+(oversight_nonc <- sum(df_60$attention_oversight == 1, na.rm = TRUE)) #correct answer false
+(beneficial_nonc <- sum(df_60$attention_beneficial == 0, na.rm = TRUE)) #correct answer true
+(rec_nonc <- sum(df_60$attention_recommender == 1, na.rm = TRUE)) #correct answer false
+(nonc_per_3 <- sum(undesireable_nonc,jobs_nonc, oversight_nonc, beneficial_nonc, rec_nonc) / 6)
+```
+```{r}
+df_150 <- df[df$duration_seconds <= 150 ,]
+(undesireable_nonc <- sum(df_150$attention_undesirable == 1, na.rm = TRUE)) #correct answer false
+(jobs_nonc <- sum(df_150$attention_jobs == 0, na.rm = TRUE)) #correct answer true
+(oversight_nonc <- sum(df_150$attention_oversight == 1, na.rm = TRUE)) #correct answer false
+(beneficial_nonc <- sum(df_150$attention_beneficial == 0, na.rm = TRUE)) #correct answer true
+(rec_nonc <- sum(df_150$attention_recommender == 1, na.rm = TRUE)) #correct answer false
+(nonc_per_0 <- sum(undesireable_nonc,jobs_nonc, oversight_nonc, beneficial_nonc, rec_nonc) / 30)
+```
+```{r}
+seconds <- c(60,90,120,150)
+nonc_per <- c(nonc_per_3, nonc_per_2, nonc_per_1, nonc_per_0)
+plot(seconds, nonc_per, main="Non-compliance percentage vs. Duration")
+```
+
+## Conclusion
+
+There is a trade-off between where we set the threshold. My recommendation is that for the full experimental survey, any subjects taking less than 2 minutes be considering a "Never-taker" and not included in analysis. The pilot suggests that this will result in a noncompliance rate of approximately 37%.
+
+Two factors will help raise the noncompliance rate for the study:
+1. Require more reputable members of Mechanical Turk take the survey
+2. Ensure that "Never Takers" are not compensated via Mechanical Turk so that the full number of complying subjects complete the survey.

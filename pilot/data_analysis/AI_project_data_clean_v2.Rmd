@@ -1,0 +1,519 @@
+---
+title: 'W241: AI Project Pilot'
+subtitle: 'Data Cleaning and EDA'
+author: "Zhaoning Yu"
+date: "3/24/2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE, message=FALSE}
+library(knitr)
+opts_chunk$set(tidy.opts=list(width.cutoff=60),tidy=TRUE)
+# knitr::opts_chunk$set(echo = TRUE)
+
+# load packages 
+library(Hmisc)              # describe()
+library(data.table)
+library(foreign)            # ??? what does this package do ????????
+library(sandwich)           # vcovHC for robust SE calculation
+library(lmtest)             # coeftest 
+library(AER)                # ivreg
+library(multiwayvcov)       # cluster.vcov()
+```
+
+# 1. Read Data
+
+## 1.1 Read Data
+
+```{r}
+d1 <- fread('./pilot_results/w241_ai_pilot.csv')
+head(d1)
+```
+
+## 1.2 Remove useless rows and columns
+
+```{r}
+# Save the column names
+header <- d1[1,]                             # save the header information
+
+# Remove useless rows
+d1 <- d1[-c(1,2)]                           # remove rows 1, 2 (redundent headers)
+
+# Remove useless columns
+d2 <- d1[d1$Status != 'Survey Preview']     # remove previews (the ones we used for testing survey)
+d2 <- subset(d2, select = -c(RecipientLastName, RecipientFirstName, RecipientEmail, ExternalReference))  # empty columns
+d2 <- subset(d2, select = -c(Status, DistributionChannel, UserLanguage))        # columns with the same value for all
+head(d2)
+```
+## 1.3 Ensure correct data types
+
+Note everything is a string in this data frame:
+
+```{r, message=FALSE}
+str(d2)
+```
+
+Change strings into numeric values:
+
+```{r}
+# Turn following columns from string to numeric
+d2[, 'Progress'] <- sapply(d2[, 'Progress'], as.numeric)
+d2[, 'Duration (in seconds)'] <- sapply(d2[, 'Duration (in seconds)'], as.numeric)
+d2[, 'LocationLatitude'] <- sapply(d2[, 'LocationLatitude'], as.numeric)
+d2[, 'LocationLongitude'] <- sapply(d2[, 'LocationLongitude'], as.numeric)
+d2[, 'mTurkCode'] <- sapply(d2[, 'mTurkCode'], as.numeric)
+
+d2[, 'Q1_1'] <- sapply(d2[, 'Q1_1'], as.numeric)
+d2[, 'Q3_1'] <- sapply(d2[, 'Q3_1'], as.numeric)
+d2[, 'Q6_1'] <- sapply(d2[, 'Q6_1'], as.numeric)
+d2[, 'Q8_1'] <- sapply(d2[, 'Q8_1'], as.numeric)
+d2[, 'Q10_1'] <- sapply(d2[, 'Q10_1'], as.numeric)
+d2[, 'Q12_1'] <- sapply(d2[, 'Q12_1'], as.numeric)
+d2[, 'Q20_1'] <- sapply(d2[, 'Q20_1'], as.numeric)
+d2[, 'Q5_1'] <- sapply(d2[, 'Q5_1'], as.numeric)
+d2[, 'Q7_1'] <- sapply(d2[, 'Q7_1'], as.numeric)
+d2[, 'Q9_1'] <- sapply(d2[, 'Q9_1'], as.numeric)
+d2[, 'Q11_1'] <- sapply(d2[, 'Q11_1'], as.numeric)
+d2[, 'Q13_1'] <- sapply(d2[, 'Q13_1'], as.numeric)
+d2[, 'Q33_1'] <- sapply(d2[, 'Q33_1'], as.numeric)
+d2[, 'Q34_1'] <- sapply(d2[, 'Q34_1'], as.numeric)
+d2[, 'Q35_1'] <- sapply(d2[, 'Q35_1'], as.numeric)
+d2[, 'Q36_1'] <- sapply(d2[, 'Q36_1'], as.numeric)
+d2[, 'Q37_1'] <- sapply(d2[, 'Q37_1'], as.numeric)
+
+# Turn 'TRUE' 'FALSE' to 1 and 0
+f1 <- function(x) {
+  if (x=='True') {
+    return(1)
+  } else if (x=='False') {
+    return(0)
+  } else {
+    return(NA)
+  }
+}
+
+d2$Q18 <- sapply(d2$Q18, f1)
+d2$Q19 <- sapply(d2$Q19, f1)
+d2$Q23 <- sapply(d2$Q23, f1)
+d2$Q17 <- sapply(d2$Q17, f1)
+d2$Q24 <- sapply(d2$Q24, f1)
+d2$Finished <- sapply(d2$Finished, f1)
+
+# Turn 'Yes' 'No' to 1 and 0
+f2 <- function(x) {
+  if (x=='Yes') {
+    return(1)
+  } else if (x=='No') {
+    return(0)
+  } else {
+    return(NA)
+  }
+}
+
+d2$Q31 <- sapply(d2$Q31, f2)
+
+# Turn 'Male' 'Female' to 1 and 0
+f3 <- function(x) {
+  if (x=='Male') {
+    return(1)
+  } else if (x=='Female') {
+    return(0)
+  } else {
+    return(NA)
+  }
+}
+
+d2$Q16 <- sapply(d2$Q16, f3)
+
+# Education into 0, 1, 2, 3, 4
+f4 <- function(x) {
+  if (x=='Other') {
+    return(0)
+  } else if (x=='High School') {
+    return(1)
+  } else if (x=='Bachelors Degree') {
+    return(2)
+  } else if (x=='0 - 2 years of graduate school') {
+    return(3)
+  } else if (x=='> 2 years of graduate school'){
+    return(4)
+  } else {
+    return(NA)
+  }
+}
+
+d2$Q14 <- sapply(d2$Q14, f4)
+
+# Turn income into 1, 2, 3, 4
+f5 <- function(x) {
+  if (x=='0 - $50,000') {
+    return(1)
+  } else if (x=='$50,000 - $100,000') {
+    return(2)
+  } else if (x=='$100,000 - $150,000') {
+    return(3)
+  } else if (x=='$150,000 or greater') {
+    return(4)
+  } else {
+    return(NA)
+  }
+}
+
+d2$Q15 <- sapply(d2$Q15, f5)
+```
+
+```{r}
+f1 <- function(x) {
+  if (x=='True') {
+    return(1)
+  } else if (x=='False') {
+    return(0)
+  } else {
+    return(NA)
+  }
+}
+```
+
+
+
+Check dataframe: 
+
+```{r}
+str(d2)
+```
+
+
+## 1.4 Rename columns for clarity
+
+```{r}
+names(d2)
+```
+
+
+```{r}
+setnames(d2, old = c("Duration (in seconds)", "Q1_1","Q3_1", "Q6_1", "Q8_1", "Q10_1","Q12_1", "Q20_1" , "Q5_1" , "Q7_1", "Q9_1" , "Q11_1" , "Q13_1" , "Q18" , "Q19","Q23", "Q17"         , "Q24", "Q33_1" , "Q34_1" , "Q35_1" , "Q36_1" , "Q37_1" , "Q31" ,"Q14",  "Q15", "Q16"), new = c('duration_seconds','AI_educated','AI_attitude', 'control_undesirable', "control_jobs", "control_oversight", "control_recommender", "control_beneficial", "treat_beneficial_1", "treat_undesirable_1", "treat_jobs_1","treat_oversight_1", "treat_recommender_1", "attention_undesirable", "attention_jobs", "attention_oversight", "attention_beneficial", "attention_recommender", "treat_beneficial_2", "treat_undesirable_2", "treat_jobs_2", "treat_oversight_2", "treat_recommender_2", "learn_anything", "education_level", "house_income", "gender" ))
+names(d2)
+```
+## 1.5 Combine 2 treatment columns for each treatment question
+
+```{r}
+na.zero <- function (x) {
+    x[is.na(x)] <- 0
+    return(x)
+}
+```
+
+```{r}
+d2$treat_beneficial_1 <- na.zero(d2$treat_beneficial_1)
+d2$treat_beneficial_2 <- na.zero(d2$treat_beneficial_2)
+d2$treat_beneficial = d2$treat_beneficial_1 + d2$treat_beneficial_2
+d2$treat_beneficial
+d2$treat_beneficial[d2$treat_beneficial == 0] <- NA
+d2$treat_beneficial
+```
+
+```{r}
+d2$treat_undesirable_1 <- na.zero(d2$treat_undesirable_1)
+d2$treat_undesirable_2 <- na.zero(d2$treat_undesirable_2)
+d2$treat_undesirable = d2$treat_undesirable_1 + d2$treat_undesirable_2
+d2$treat_undesirable
+d2$treat_undesirable[d2$treat_undesirable == 0] <- NA
+d2$treat_undesirable
+```
+
+```{r}
+d2$treat_jobs_1 <- na.zero(d2$treat_jobs_1)
+d2$treat_jobs_2 <- na.zero(d2$treat_jobs_2)
+d2$treat_jobs = d2$treat_jobs_1 + d2$treat_jobs_2
+d2$treat_jobs
+d2$treat_jobs[d2$treat_jobs == 0] <- NA
+d2$treat_jobs
+```
+
+```{r}
+d2$treat_oversight_1 <- na.zero(d2$treat_oversight_1)
+d2$treat_oversight_2 <- na.zero(d2$treat_oversight_2)
+d2$treat_oversight = d2$treat_oversight_1 + d2$treat_oversight_2
+d2$treat_oversight
+d2$treat_oversight[d2$treat_oversight == 0] <- NA
+d2$treat_oversight
+```
+
+```{r}
+d2$treat_recommender_1 <- na.zero(d2$treat_recommender_1)
+d2$treat_recommender_2 <- na.zero(d2$treat_recommender_2)
+d2$treat_recommender = d2$treat_recommender_1 + d2$treat_recommender_2
+d2$treat_recommender
+d2$treat_recommender[d2$treat_recommender == 0] <- NA
+d2$treat_recommender
+```
+
+
+
+
+# 2. EDA
+
+## 2.1 Duration 
+
+Median for finishing the survey is 153 sec (~ 2.5 mins), minimum is 27 secs, maximum 1491 sec (~25 mins). Most people finish the survey 2-3 mins, most finish within 5 mins.
+
+```{r fig.height=3.5, fig.width=8, echo=FALSE}
+par(mfrow=c(1,2))
+summary(d2$duration_seconds)
+hist(d2$duration_seconds, breaks = 25)
+boxplot(d2$duration_seconds)
+```
+
+## 2.2 Location (Longitude, Latitude)
+
+Most of the survey takers seem to locate on the west-coast (we can add a US map later to make it clear).
+```{r}
+plot(d2$LocationLongitude, d2$LocationLatitude)
+```
+
+
+##Too Many samples collected (60 instead of 50)
+
+All codes for mTurk given by Qualtrics are unique.
+```{r}
+length(unique(d2$mTurkCode)) == nrow(d2)
+```
+
+Six of our responses are the same IP address answering twice. Could be two people at same IP address - yes, if you look, often they start the task a few seconds apart and have different answers to baseline questions. May be groups of people working together in person (to help eachother find good hits).
+```{r}
+second_response <- length(d2$IPAddress) - length(unique(d2$IPAddress))
+second_response
+```
+
+
+
+
+## 2.3 Baseline Questions
+
+### Q.1: How well educated are you about the current state of artificial intelligence technology?
+
+Median is 3, mean is 3.083.
+
+```{r fig.height=3.5, fig.width=8, echo=FALSE}
+par(mfrow=c(1,2))
+#ggplot(d2, aes(x=AI_educated)) + geom_histogram(binwidth=1, color="black", fill="white")
+hist(d2$AI_educated, breaks = 10)
+boxplot(d2$AI_educated)
+summary(d2$AI_educated)
+
+```
+
+### Q.3: How do you feel in general about the adoption of artificial intelligence technology?
+
+Median is 4, mean is 3.559, most people feel generally positive towards AI.
+
+```{r fig.height=3.5, fig.width=8, echo=FALSE}
+par(mfrow=c(1,2))
+summary(d2$AI_attitude)
+hist(d2$AI_attitude, breaks = 10)
+boxplot(d2$AI_attitude)
+```
+
+### Q.31: Did you learn anything new about AI while taking this survey?
+
+The mean is 0.6364, people learned something from the survey.
+
+```{r fig.height=3.5, fig.width=8, echo=FALSE}
+par(mfrow=c(1,2))
+summary(d2$learn_anything)
+hist(d2$learn_anything, breaks = 10)
+boxplot(d2$learn_anything)
+```
+
+## 2.4 Attention Questions
+
+Q18: T/F AI undesirable effects (AI gains consciousness)
+
+-only 64% of people answered correctly
+
+```{r}
+correct_answer = 1 - mean(d2$attention_undesirable, na.rm = TRUE)
+correct_answer
+```
+
+Q19: T/F Jobs (Paralegal)
+
+-60% of people answered correctly
+
+```{r}
+correct_answer = mean(d2$attention_jobs, na.rm = TRUE)
+correct_answer
+```
+
+Q23: T/F Oversight (Guidelines AI oversight in place already)
+
+-everyone answered correctly
+
+```{r}
+correct_answer = 1 - mean(d2$attention_oversight, na.rm = TRUE)
+correct_answer
+```
+
+Q17: T/F  beneficial (AI used in spam block)
+
+- 85% answered correctly
+
+```{r}
+correct_answer = mean(d2$attention_beneficial, na.rm = TRUE)
+correct_answer
+```
+
+Q24: T/F  Recommender (do not use your personal data)
+
+- 55% answered correctly
+
+```{r}
+correct_answer = 1 - mean(d2$attention_recommender, na.rm = TRUE)
+correct_answer
+```
+
+
+## 2.5 Covariate Questions
+
+### Q.14: What is the highest level of education that you have completed?
+
+Most went to college, about 1/3 high-school, not many 'other'.
+
+```{r fig.height=3.5, fig.width=8, echo=FALSE}
+par(mfrow=c(1,2))
+describe(d2$education_level)
+hist(d2$education_level, breaks = 10)
+boxplot(d2$education_level)
+```
+
+### Q.15: Which of the following best describes your annual household income?
+
+Most people in 0-50000 and 50000-100000 brackets.
+```{r fig.height=3.5, fig.width=8, echo=FALSE}
+par(mfrow=c(1,2))
+describe(d2$house_income)
+hist(d2$house_income, breaks = 10)
+boxplot(d2$house_income)
+```
+
+### Q.16: Which gender do you identify with?
+
+```{r fig.height=3.5, fig.width=8, echo=FALSE}
+par(mfrow=c(1,2))
+hist(d2$gender, breaks = 10)
+boxplot(d2$gender)
+describe(d2$gender)
+```
+
+
+## 2.6 AI treatment/control Questions
+
+### AI 1: Undesirable effects: control_undesirable, treat_undesirable
+
+```{r fig.height=5, fig.width=12, echo=FALSE}
+describe(d2$control_undesirable)
+describe(d2$treat_undesirable)
+
+par(mfrow=c(2,4))
+hist(d2$control_undesirable, breaks = 10)
+hist(d2$treat_undesirable, breaks = 10)
+boxplot(d2$control_undesirable)
+boxplot(d2$treat_undesirable)
+```
+
+No statisitcally significant effect of treatment on opinion of undesirable/dangerous effects of AI. However, respondents are 0.19 points less likely to think that there will be undesirable/dangerous effects of AI.
+
+```{r}
+t.test(na.omit(d2$control_undesirable), na.omit(d2$treat_undesirable))
+wilcox.test(na.omit(d2$control_undesirable), na.omit(d2$treat_undesirable))
+```
+
+
+
+### AI_2: Jobs: control_jobs, treat_jobs
+
+```{r fig.height=5, fig.width=12, echo=FALSE}
+describe(d2$control_jobs)
+describe(d2$treat_jobs)
+
+par(mfrow=c(2,4))
+hist(d2$control_jobs, breaks = 10)
+hist(d2$treat_jobs, breaks = 10)
+boxplot(d2$control_jobs)
+boxplot(d2$treat_jobs)
+```
+
+
+No statistically significant effect of treatment on opinion of effects of AI on jobs. However, respondents are 0.24 points more likely to think jobs are threatened.
+
+```{r}
+t.test(na.omit(d2$control_jobs), na.omit(d2$treat_jobs))
+wilcox.test(na.omit(d2$control_jobs), na.omit(d2$treat_jobs))
+```
+
+### AI_3: Oversight: control_oversight, treatment_oversight
+
+```{r fig.height=5, fig.width=12, echo=FALSE}
+describe(d2$control_oversight)
+describe(d2$treat_oversight)
+
+par(mfrow=c(2,4))
+hist(d2$control_oversight, breaks = 10)
+hist(d2$treat_oversight, breaks = 10)
+boxplot(d2$control_oversight)
+boxplot(d2$treat_oversight)
+```
+
+No statistically significant effect of treatment on opinion of effects of AI oversight. However, treatment effect is -0.3 - people are less likely to think oversight should be required.
+
+```{r}
+t.test(na.omit(d2$control_oversight), na.omit(d2$treat_oversight))
+wilcox.test(na.omit(d2$control_oversight), na.omit(d2$treat_oversight))
+```
+
+
+### AI_4: Recommender Systems: control_recommender, treat_recommender
+
+```{r fig.height=5, fig.width=12, echo=FALSE}
+describe(d2$control_recommender)
+describe(d2$treat_recommender)
+
+par(mfrow=c(2,4))
+hist(d2$control_recommender, breaks = 10)
+hist(d2$treat_recommender, breaks = 10)
+boxplot(d2$control_recommender)
+boxplot(d2$treat_recommender)
+```
+
+No statistically significant effect of treatment on opinion of recommender systems. However, treatment effect is 0.4 - people more likley to accept the opinion of a recommender system over a friend.
+
+```{r}
+t.test(na.omit(d2$control_recommender), na.omit(d2$treat_recommender))
+wilcox.test(na.omit(d2$control_recommender), na.omit(d2$treat_recommender))
+```
+
+
+### AI_5: Beneficial: control_beneficial, treat_beneficial
+
+```{r fig.height=5, fig.width=12, echo=FALSE}
+describe(d2$control_beneficial)
+describe(d2$treat_beneficial)
+
+par(mfrow=c(2,4))
+hist(d2$control_beneficial, breaks = 10)
+hist(d2$treat_beneficial, breaks = 10)
+boxplot(d2$control_beneficial)
+boxplot(d2$treat_beneficial)
+```
+
+No statistically significant effect of treatment on opinion of recommender systems. Treatment effect is very small (-0.07) - people less likley to think that AI will be beneficial to society.
+
+```{r}
+t.test(na.omit(d2$control_beneficial), na.omit(d2$treat_beneficial))
+wilcox.test(na.omit(d2$control_beneficial), na.omit(d2$treat_beneficial))
+```
+```{r}
+write.csv(d2, "./pilot_cleaned")
+```
+
+

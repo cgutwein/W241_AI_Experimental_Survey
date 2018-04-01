@@ -1,0 +1,31 @@
+---
+title: "AI_pilot_time-check"
+author: "Chet Gutwein"
+date: "March 28, 2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+df <- read.csv('./pilot_cleaned.csv', stringsAsFactors = FALSE)
+```
+
+```{r}
+library(lubridate)
+df$StartDate <- as.POSIXct(df$StartDate)
+df$EndDate <- as.POSIXct(df$EndDate)
+```
+```{r}
+start <- as.POSIXct("2018-03-15 21:20:00")
+stop <- as.POSIXct("2018-03-15 22:31:00")
+```
+```{r}
+df_adj <- df[(df$StartDate > start) & (df$EndDate < stop) ,]
+```
+```{r}
+write.csv(df_adj, './pilot_cleaned_trimmed.csv')
+```
+

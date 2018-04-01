@@ -1,0 +1,172 @@
+---
+title: 'W241: AI Project Pilot'
+subtitle: 'Data Cleaning and EDA'
+author: "Zhaoning Yu"
+date: "3/24/2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE, message=FALSE}
+library(knitr)
+opts_chunk$set(tidy.opts=list(width.cutoff=60),tidy=TRUE)
+# knitr::opts_chunk$set(echo = TRUE)
+
+# load packages 
+library(Hmisc)              # describe()
+library(data.table)
+library(foreign)            # ??? what does this package do ????????
+library(sandwich)           # vcovHC for robust SE calculation
+library(lmtest)             # coeftest 
+library(AER)                # ivreg
+```
+
+# 1. Read Data
+
+## 1.1 Read Data
+```{r}
+getwd()
+```
+
+```{r}
+d1 <- fread('./pilot_results/w241_ai_pilot.csv')
+head(d1)
+```
+
+## 1.2 Remove useless rows and columns
+
+```{r}
+# Save the column names
+header <- d1[1,]                             # save the header information
+
+# Remove useless rows
+d1 <- d1[-c(1,2)]                           # remove rows 1, 2 (redundent headers)
+
+# Remove useless columns
+d2 <- d1[d1$Status != 'Survey Preview']     # remove previews (the ones we used for testing survey)
+d2 <- subset(d2, select = -c(RecipientLastName, RecipientFirstName, RecipientEmail, ExternalReference))  # empty columns
+d2 <- subset(d2, select = -c(Status, DistributionChannel, UserLanguage))        # columns with the same value for all
+head(d2)
+```
+## 1.3 Ensure correct data types
+
+Note everything is a string in this data frame:
+
+```{r, message=FALSE}
+str(d2)
+```
+
+Change strings into numeric values:
+
+```{r}
+# Turn following columns from string to numeric
+d2[, 'Progress'] <- sapply(d2[, 'Progress'], as.numeric)
+d2[, 'Duration (in seconds)'] <- sapply(d2[, 'Duration (in seconds)'], as.numeric)
+d2[, 'LocationLatitude'] <- sapply(d2[, 'LocationLatitude'], as.numeric)
+d2[, 'LocationLongitude'] <- sapply(d2[, 'LocationLongitude'], as.numeric)
+d2[, 'mTurkCode'] <- sapply(d2[, 'mTurkCode'], as.numeric)
+
+d2[, 'Q1_1'] <- sapply(d2[, 'Q1_1'], as.numeric)
+d2[, 'Q3_1'] <- sapply(d2[, 'Q3_1'], as.numeric)
+d2[, 'Q6_1'] <- sapply(d2[, 'Q6_1'], as.numeric)
+d2[, 'Q8_1'] <- sapply(d2[, 'Q8_1'], as.numeric)
+d2[, 'Q10_1'] <- sapply(d2[, 'Q10_1'], as.numeric)
+d2[, 'Q12_1'] <- sapply(d2[, 'Q12_1'], as.numeric)
+d2[, 'Q20_1'] <- sapply(d2[, 'Q20_1'], as.numeric)
+d2[, 'Q5_1'] <- sapply(d2[, 'Q5_1'], as.numeric)
+d2[, 'Q7_1'] <- sapply(d2[, 'Q7_1'], as.numeric)
+d2[, 'Q9_1'] <- sapply(d2[, 'Q9_1'], as.numeric)
+d2[, 'Q11_1'] <- sapply(d2[, 'Q11_1'], as.numeric)
+d2[, 'Q13_1'] <- sapply(d2[, 'Q13_1'], as.numeric)
+d2[, 'Q33_1'] <- sapply(d2[, 'Q33_1'], as.numeric)
+d2[, 'Q34_1'] <- sapply(d2[, 'Q34_1'], as.numeric)
+d2[, 'Q35_1'] <- sapply(d2[, 'Q35_1'], as.numeric)
+d2[, 'Q36_1'] <- sapply(d2[, 'Q36_1'], as.numeric)
+d2[, 'Q37_1'] <- sapply(d2[, 'Q37_1'], as.numeric)
+
+# Turn 'TRUE' 'FALSE' to 1 and 0
+f1 <- function(x) {
+  if (x=='TRUE') {
+    return(1)
+  } else if (x=='FALSE') {
+    return(0)
+  } else {
+    return(NA)
+  }
+}
+
+d2$Q18 <- sapply(d2$Q18, f1)
+d2$Q19 <- sapply(d2$Q19, f1)
+d2$Q23 <- sapply(d2$Q23, f1)
+d2$Q17 <- sapply(d2$Q17, f1)
+d2$Q24 <- sapply(d2$Q24, f1)
+d2$Finished <- sapply(d2$Finished, f1)
+
+# Turn 'Yes' 'No' to 1 and 0
+f2 <- function(x) {
+  if (x=='Yes') {
+    return(1)
+  } else if (x=='No') {
+    return(0)
+  } else {
+    return(NA)
+  }
+}
+
+d2$Q31 <- sapply(d2$Q31, f2)
+
+# Turn 'Male' 'Female' to 1 and 0
+f3 <- function(x) {
+  if (x=='Male') {
+    return(1)
+  } else if (x=='Female') {
+    return(0)
+  } else {
+    return(NA)
+  }
+}
+
+d2$Q16 <- sapply(d2$Q16, f3)
+
+# Education into 0, 1, 2, 3, 4
+f4 <- function(x) {
+  if (x=='Other') {
+    return(0)
+  } else if (x=='High School') {
+    return(1)
+  } else if (x=='Bachelors Degree') {
+    return(2)
+  } else if (x=='0 - 2 years of graduate school') {
+    return(3)
+  } else if (x=='> 2 years of graduate school'){
+    return(4)
+  } else {
+    return(NA)
+  }
+}
+
+d2$Q14 <- sapply(d2$Q14, f4)
+
+# Turn income into 1, 2, 3, 4
+f5 <- function(x) {
+  if (x=='0 - $50,000') {
+    return(1)
+  } else if (x=='$50,000 - $100,000') {
+    return(2)
+  } else if (x=='$100,000 - $150,000') {
+    return(3)
+  } else if (x=='$150,000 or greater') {
+    return(4)
+  } else {
+    return(NA)
+  }
+}
+
+d2$Q15 <- sapply(d2$Q15, f5)
+```
+
+Check dataframe: 
+
+```{r}
+str(d2)
+```
+
