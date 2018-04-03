@@ -1,0 +1,27 @@
+---
+title: "Approvals for MTurk"
+author: "Chet Gutwein"
+date: "April 2, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Summary
+
+Taking a previous file used to 'Reject' work performed by Mechanical Turk Workers and changing it to approve their work.
+
+```{r}
+df <- read.csv('rejections_batch_02_03.csv', stringsAsFactors = FALSE)
+```
+
+```{r}
+df$Approve <- df$Reject
+df$Reject <- ""
+```
+
+```{r}
+write.csv(df, 'approvals_batch_02_03.csv', row.names = FALSE)
+```

@@ -1,0 +1,22 @@
+---
+title: "workers_file"
+author: "Chet Gutwein"
+date: "April 2, 2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+d <- read.csv('User_1006582_workers_03.csv')
+```
+
+```{r}
+d_1 <- data.frame(d$Worker.ID, d$UPDATE.ai_responders_033118)
+```
+```{r}
+colnames(d_1) <- c("WorkerID", "UPDATE-ai_responders_033118")
+d_1$`UPDATE-ai_responders_033118` <- 1
+write.csv(d_1, 'mturk_quals_033118.csv', row.names=FALSE)
+```
+
+
