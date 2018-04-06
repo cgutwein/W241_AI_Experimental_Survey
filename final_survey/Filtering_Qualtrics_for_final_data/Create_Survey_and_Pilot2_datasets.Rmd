@@ -1,0 +1,93 @@
+---
+title: "Creating Full Survey Only Dataset"
+author: "Kiersten Henderson"
+date: "4/5/2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(data.table)
+
+```
+
+## Use mTurk code to filter Qualtrics Data
+
+The Qualtrics CSV contains all of the observations we ever collected.
+Batch1 is just expert workers.
+There are also pilot survey responses in there
+There are also our test responses in there.
+
+```{r}
+#the Qualtrics Data
+all_data_Qualtrics <- read.csv('All_Qualtrics_data.csv')
+head(all_data_Qualtrics)
+nrow(all_data_Qualtrics)
+```
+
+## Create master list of mTurk workers from Batch 2 and 3.
+
+
+```{r}
+batch2_mTurk <- read.csv("Batch_02_RESULTS_unmodified.csv")
+head(batch2_mTurk)
+batch3_mTurk <- read.csv("Batch_03_RESULTS_unmodified.csv")
+```
+
+
+```{r}
+batch2workers <- batch2_mTurk$Answer.surveycode
+length(batch2_mTurk$Answer.surveycode)
+batch3workers<- batch3_mTurk$Answer.surveycode
+length(batch3_mTurk$Answer.surveycode)
+
+all_workers <- append(batch2workers, batch3workers)
+length(all_workers)
+```
+
+```{r}
+Batch2_Survey_df <- all_data_Qualtrics[all_data_Qualtrics$mTurkCode %in% batch2workers,]
+nrow(Batch2_Survey_df)
+```
+
+```{r}
+Batch3_Survey_df <- all_data_Qualtrics[all_data_Qualtrics$mTurkCode %in% batch3workers,]
+nrow(Batch3_Survey_df)
+```
+
+Indeed, two survey completers in batch 2 did not have mTurk codes.
+
+```{r}
+Raw_Survey_data <- rbind(Batch2_Survey_df,Batch3_Survey_df)
+nrow(Raw_Survey_df)
+```
+
+```{r}
+write.csv(Raw_Survey_data, 'Filtered_Raw_Survey_data_04_05_2018.csv', row.names=FALSE)
+
+```
+
+
+```{r}
+Pilot2_expert_mTurk <- read.csv('Batch_01_RESULTS_unmodified.csv')
+head(Pilot2_expert_mTurk)
+nrow(Pilot2_expert_mTurk)
+```
+
+```{r}
+batch1workers <- Pilot2_expert_mTurk$Answer.surveycode
+Expert_mTurk_df <- all_data_Qualtrics[all_data_Qualtrics$mTurkCode %in% batch1workers,]
+nrow(Expert_mTurk_df)
+```
+
+```{r}
+write.csv(Expert_mTurk_df, 'Pilot2_Expert_mTurk_04_05_2018.csv', row.names=FALSE)
+```
+
+
+
+
+
+
+
+
