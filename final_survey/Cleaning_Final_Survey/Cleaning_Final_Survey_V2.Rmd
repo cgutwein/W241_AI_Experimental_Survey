@@ -1,0 +1,104 @@
+---
+title: 'W241: AI Project Final Survey'
+subtitle: 'Data Cleaning V2'
+author: "Zhaoning Yu"
+date: "4/08/2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE, message=FALSE}
+library(knitr)
+opts_chunk$set(tidy.opts=list(width.cutoff=60),tidy=TRUE)
+# knitr::opts_chunk$set(echo = TRUE)
+
+# load packages 
+library(Hmisc)              # describe()
+library(data.table)
+library(foreign)            # ??? what does this package do ????????
+library(sandwich)           # vcovHC for robust SE calculation
+library(lmtest)             # coeftest 
+library(AER)                # ivreg
+library(multiwayvcov)       # cluster.vcov()
+```
+
+
+# 1. Read Data
+
+## 1.1 Read Data
+
+First read the cleaned full survey data from KH:
+
+```{r}
+rm(list=ls())
+
+d1 <- fread('./Cleaned_Full_Survey_dataV1.csv')
+head(d1)
+```
+
+### 1.2 Create a factor column for attention question 
+
+```{r}
+# create indicator vectors to indicate the attention question type
+t1 <- 1*!is.na(d1$attention_undesirable) 
+t2 <- 2*!is.na(d1$attention_jobs) 
+t3 <- 3*!is.na(d1$attention_oversight) 
+t4 <- 4*!is.na(d1$attention_recommender) 
+t5 <- 5*!is.na(d1$attention_beneficial) 
+
+# add a vector column for attention question
+d1$attention_question_code <- t1 + t2 + t3 + t4 + t5
+d1$attention_question <- as.factor(t1 + t2 + t3 + t4 + t5)
+
+# rename the levels
+levels(d1$attention_question)[levels(d1$attention_question)=="1"] <- "undesirable"
+levels(d1$attention_question)[levels(d1$attention_question)=="2"] <- "jobs"
+levels(d1$attention_question)[levels(d1$attention_question)=="3"] <- "oversight"
+levels(d1$attention_question)[levels(d1$attention_question)=="4"] <- "recommender"
+levels(d1$attention_question)[levels(d1$attention_question)=="5"] <- "beneficial"
+
+# levels(d1$attention_question)[levels(d1$attention_question)=="0"] <- "what"
+```
+
+## 1.3 Remove some columns and re-arrange:
+
+### Columns that are removed
+
+- "Progress" column has a single value of 100
+- "Finished" column has a single value of 1
+- "RecordedDate" column has the same information as "EndDate" (+1 second)
+
+### Note:
+
+- "Assignment_##" columns are indicator whether subject assigned to treatment or control for each question
+- "Score_##" columns are answers for the question (as control or treatment depending on assignment)
+
+```{r}
+d2 <- subset(d1, select=c(ResponseId, mTurkCode, 
+                          IPAddress, LocationLatitude, LocationLongitude,
+                          StartDate, EndDate, duration_seconds, 
+                          gender, education_level, house_income,
+                          AI_educated, AI_attitude, learn_anything,
+                          assignment_undesirable, assignment_jobs, assignment_oversight, assignment_recommender, assignment_beneficial,
+                          score_undesirable, score_jobs, score_oversight, score_recommender, score_beneficial,
+                          control_undesirable, control_jobs, control_oversight, control_recommender, control_beneficial,
+                          treat_undesirable, treat_jobs, treat_oversight, treat_recommender, treat_beneficial,
+                          attention_question_code, attention_question, attention_correct))
+str(d2)
+```
+## 1.4 Convert StartDate and EndDate strings to datetime?
+
+## 1.5 Write dataframe to csv and check result
+
+```{r}
+# write.csv(d2, 'Cleaned_Full_Survey_dataV2.csv', row.names=FALSE)
+# d3 <- fread('./Cleaned_Full_Survey_dataV2.csv')
+# str(d3)
+```
+
+
+
+# 2. EDA
+```{r}
+hist(d2[d2$duration_seconds<1000]$duration_seconds, breaks=50)
+```
+
