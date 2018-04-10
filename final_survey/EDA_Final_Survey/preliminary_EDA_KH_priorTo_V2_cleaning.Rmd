@@ -1,0 +1,380 @@
+---
+title: "Untitled"
+author: "Kiersten Henderson"
+date: "4/6/2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+opts_chunk$set(tidy.opts=list(width.cutoff=60),tidy=TRUE)
+# knitr::opts_chunk$set(echo = TRUE)
+
+# load packages 
+library(Hmisc)              # describe()
+library(data.table)
+library(foreign)            # ??? what does this package do ????????
+library(sandwich)           # vcovHC for robust SE calculation
+library(lmtest)             # coeftest 
+library(AER)                # ivreg
+library(multiwayvcov)       # cluster.vcov()
+```
+
+
+```{r cars}
+df= read.csv("Cleaned_Full_Survey_dataV1.csv")
+head(df)
+nrow(df)
+```
+
+#EDA
+
+## 2.1 Duration 
+
+Median for finishing the survey is  sec 
+
+
+
+```{r fig.height=3.5, fig.width=8, echo=FALSE}
+par(mfrow=c(1,2))
+summary(df$duration_seconds)
+#hist(df$duration_seconds, breaks = 25)
+boxplot(df$duration_seconds)
+hist(df[df$duration_seconds<1000]$duration_seconds, breaks=50)
+```
+
+## 2.2 Location (Longitude, Latitude)
+
+Wow - people must be american but be all over the world. Crazy!
+```{r}
+plot(df$LocationLongitude, df$LocationLatitude)
+```
+
+
+## 2.3 Baseline Questions
+
+### Q.1: How well educated are you about the current state of artificial intelligence technology?
+
+Median is 3.0 , mean is 2.738.
+
+```{r fig.height=3.5, fig.width=8, echo=FALSE}
+par(mfrow=c(1,2))
+#ggplot(d2, aes(x=AI_educated)) + geom_histogram(binwidth=1, color="black", fill="white")
+hist(df$AI_educated, breaks = 10)
+boxplot(df$AI_educated)
+summary(df$AI_educated)
+
+```
+
+### Q.3: How do you feel in general about the adoption of artificial intelligence technology?
+
+Median is 3.00, mean is 3.24, most people feel neutral towards AI?
+
+```{r fig.height=3.5, fig.width=8, echo=FALSE}
+par(mfrow=c(1,2))
+summary(df$AI_attitude)
+hist(df$AI_attitude, breaks = 10)
+boxplot(df$AI_attitude)
+```
+
+### Q.31: Did you learn anything new about AI while taking this survey?
+
+The mean is  0.642-  people learned something from the survey.
+
+```{r fig.height=3.5, fig.width=8, echo=FALSE}
+par(mfrow=c(1,2))
+summary(df$learn_anything)
+hist(df$learn_anything, breaks = 10)
+boxplot(df$learn_anything)
+```
+
+## 2.4 Attention Questions - after filtering out really fast survey takers
+
+Q18: T/F AI undesirable effects (AI gains consciousness)
+
+
+Only 51% of people got this question right.
+```{r}
+correct_answer = mean(df$attention_undesirable_correct, na.rm = TRUE)
+correct_answer
+```
+
+Q19: T/F Jobs (Paralegal)
+
+-73.7% of people answered correctly
+
+
+
+```{r}
+correct_answer = mean(df$attention_jobs_correct, na.rm = TRUE)
+correct_answer
+```
+
+Q23: T/F Oversight (Guidelines AI oversight in place already)
+
+-79% of people answered correctly
+
+```{r}
+correct_answer = mean(df$attention_oversight_correct, na.rm = TRUE)
+correct_answer
+```
+
+Q17: T/F  beneficial (AI used in spam block)
+
+ - 86% answered correctly
+
+
+```{r}
+correct_answer = mean(df$attention_beneficial_correct, na.rm = TRUE)
+correct_answer
+```
+
+Q24: T/F  Recommender (do not use your personal data)
+
+14.4% of peole get this right
+
+```{r}
+correct_answer = mean(df$attention_recommender_correct, na.rm = TRUE)
+correct_answer
+```
+
+
+What percent of people in the survey get their attention question right?
+
+61% do - so our never takers will be 39% of people.
+
+```{r}
+correct <- mean(df$attention_correct, na.rm = TRUE)
+correct
+```
+
+## 2.5 Covariate Questions
+
+### Q.14: What is the highest level of education that you have completed?
+
+Most went to college, about 1/3 high-school, not many 'other'.
+
+```{r fig.height=3.5, fig.width=8, echo=FALSE}
+par(mfrow=c(1,2))
+describe(df$education_level)
+hist(df$education_level, breaks = 10)
+boxplot(df$education_level)
+```
+
+### Q.15: Which of the following best describes your annual household income?
+
+Most people in 0-50000 and 50000-100000 brackets.
+```{r fig.height=3.5, fig.width=8, echo=FALSE}
+par(mfrow=c(1,2))
+describe(df$house_income)
+hist(df$house_income, breaks = 10)
+boxplot(df$house_income)
+```
+
+### Q.16: Which gender do you identify with?
+
+- 48% men, 52% women: more balanced than pilot!
+```{r fig.height=3.5, fig.width=8, echo=FALSE}
+par(mfrow=c(1,2))
+hist(df$gender, breaks = 10)
+boxplot(df$gender)
+describe(df$gender)
+```
+
+
+## 2.6 AI treatment/control Questions
+
+### AI 1: Undesirable effects: control_undesirable, treat_undesirable
+
+```{r fig.height=5, fig.width=12, echo=FALSE}
+describe(df$control_undesirable)
+describe(df$treat_undesirable)
+
+par(mfrow=c(2,4))
+hist(df$control_undesirable, breaks = 10)
+hist(df$treat_undesirable, breaks = 10)
+boxplot(df$control_undesirable)
+boxplot(df$treat_undesirable)
+```
+
+
+People are slightly less likely to think there are undesirable effects (3.219680  3.079545 ). p=0.03922
+
+```{r}
+t.test(na.omit(df$control_undesirable), na.omit(df$treat_undesirable))
+wilcox.test(na.omit(df$control_undesirable), na.omit(df$treat_undesirable))
+```
+
+### AI_2: Jobs: control_jobs, treat_jobs
+
+```{r fig.height=5, fig.width=12, echo=FALSE}
+describe(df$control_jobs)
+describe(df$treat_jobs)
+
+par(mfrow=c(2,4))
+hist(df$control_jobs, breaks = 10)
+hist(df$treat_jobs, breaks = 10)
+boxplot(df$control_jobs)
+boxplot(df$treat_jobs)
+```
+
+No statistically significant effect of treatment on opinion of effects of AI on jobs. Respondents are 0.10 points less likely to think jobs are threatened.
+
+```{r}
+t.test(na.omit(df$control_jobs), na.omit(df$treat_jobs))
+wilcox.test(na.omit(df$control_jobs), na.omit(df$treat_jobs))
+```
+
+### AI_3: Oversight: control_oversight, treatment_oversight
+
+```{r fig.height=5, fig.width=12, echo=FALSE}
+describe(df$control_oversight)
+describe(df$treat_oversight)
+
+par(mfrow=c(2,4))
+hist(df$control_oversight, breaks = 10)
+hist(df$treat_oversight, breaks = 10)
+boxplot(df$control_oversight)
+boxplot(df$treat_oversight)
+```
+
+No statistically significant effect of treatment on opinion of effects of AI oversight. Treatment effect is 0.06 -  people are pretty much just as likely to think oversight should be required.
+
+```{r}
+t.test(na.omit(df$control_oversight), na.omit(df$treat_oversight))
+wilcox.test(na.omit(df$control_oversight), na.omit(df$treat_oversight))
+```
+
+### AI_4: Recommender Systems: control_recommender, treat_recommender
+
+```{r fig.height=5, fig.width=12, echo=FALSE}
+describe(df$control_recommender)
+describe(df$treat_recommender)
+
+par(mfrow=c(2,4))
+hist(df$control_recommender, breaks = 10)
+hist(df$treat_recommender, breaks = 10)
+boxplot(df$control_recommender)
+boxplot(df$treat_recommender)
+```
+
+
+No statistically significant effect of treatment on opinion of recommender systems. Treatment effect is ~0.04 - basically non-existent.
+
+```{r}
+t.test(na.omit(df$control_recommender), na.omit(df$treat_recommender))
+wilcox.test(na.omit(df$control_recommender), na.omit(df$treat_recommender))
+```
+
+### AI_5: Beneficial: control_beneficial, treat_beneficial
+
+```{r fig.height=5, fig.width=12, echo=FALSE}
+describe(df$control_beneficial)
+describe(df$treat_beneficial)
+
+par(mfrow=c(2,4))
+hist(df$control_beneficial, breaks = 10)
+hist(df$treat_beneficial, breaks = 10)
+boxplot(df$control_beneficial)
+boxplot(df$treat_beneficial)
+```
+
+
+No statistically significant effect of treatment on opinion of AI benefits. People are 0.03 less  likley to think that AI will be beneficial to society.
+
+```{r}
+t.test(na.omit(df$control_beneficial), na.omit(df$treat_beneficial))
+wilcox.test(na.omit(df$control_beneficial), na.omit(df$treat_beneficial))
+```
+
+```{r}
+head(df)
+```
+
+```{r}
+df$mTurkCode <- as.factor(df$mTurkCode)
+#levels(df$mTurkCode)
+#make list mTurkCode
+list_mTurkCode <- df$mTurkCode 
+```
+
+```{r}
+View(df)
+```
+
+
+
+# i haven't controlled for fixed effects. 
+```{r}
+#must do robust standard errors.
+model_beneficial <- lm(score_beneficial~assignment_beneficial+AI_attitude +gender +education_level +house_income+ assignment_beneficial*AI_educated, data=df)
+summary(model_beneficial)
+coeftest(model_beneficial, vcov = vcovHC)
+```
+
+
+I cannot figure out how to put in the fixed effect of mTurkCode!!! Tried three different ways below.
+
+```{r}
+library(plm)
+
+#model_beneficial_FE<-lm(score_beneficial ~ assignment_beneficial + AI_attitude + 
+#    gender + education_level + house_income + assignment_beneficial * 
+#    AI_educated + factor(mTurkCode), data = df)
+
+#model_beneficial_FE<-plm(score_beneficial ~ assignment_beneficial + AI_attitude + 
+#    gender + education_level + house_income + assignment_beneficial * 
+#    AI_educated + factor(mTurkCode), data = df, model = "within")
+
+#model_beneficial_FE<-plm(formula=score_beneficial ~ assignment_beneficial + AI_attitude + 
+#    gender + education_level + house_income + assignment_beneficial * 
+#    AI_educated, data = df,index = c("mTurkCode"), model = "within")
+
+
+#model_beneficial_FE<-plm(formula=score_beneficial ~ assignment_beneficial + AI_attitude + 
+#    gender + education_level + house_income + assignment_beneficial * 
+#    AI_educated + factor(mTurkCode), data = df, index=c("mTurkCode"),model = "within",effect="individual")
+
+
+summary(model_beneficial_FE)
+
+
+```
+
+```{r}
+length(df$mTurkCode)
+length(df$assignment_beneficial)
+length(unique(df$mTurkCode))
+```
+
+
+```{r}
+#must do robust standard errors.
+model_undesirable <- lm(score_undesirable~assignment_undesirable+AI_attitude +gender +education_level +house_income+ assignment_undesirable*AI_educated, data=df)
+summary(model_undesirable)
+coeftest(model_undesirable, vcov = vcovHC)
+```
+
+
+
+
+```{r}
+#must do robust standard errors.
+model_jobs <- lm(score_jobs~assignment_jobs+AI_attitude+education_level+house_income+gender, data=legit_data)
+summary(model_jobs)
+coeftest(model_jobs, vcov = vcovHC)
+```
+
+```{r}
+#must do robust standard errors.
+model_oversight <- lm(score_oversight~assignment_oversight+AI_attitude+education_level+house_income+gender, data=legit_data)
+summary(model_oversight)
+coeftest(model_oversight, vcov = vcovHC)
+```
+
+```{r}
+#must do robust standard errors.
+model_recommender <- lm(score_recommender~assignment_recommender+AI_attitude+education_level+house_income+gender, data=legit_data)
+summary(model_recommender)
+coeftest(model_recommender, vcov = vcovHC)
+```
