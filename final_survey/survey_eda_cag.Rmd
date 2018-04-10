@@ -1,0 +1,110 @@
+---
+title: "Exploratory Data Analysis"
+author: "Chet Gutwein"
+date: "4/8/2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Libraries
+
+```{r }
+library(data.table)
+library(dplyr)
+library(magrittr)
+library(ggplot2)
+library(gridExtra)
+library(ggExtra)
+```
+
+## Read Data
+
+```{r}
+d <- fread('./Cleaning_Final_Survey/Cleaned_Full_Survey_dataV1.csv')
+```
+
+## Duration
+
+First, we'll take a look at how long participants took to take the survey. 
+
+```{r}
+summary(d$duration_seconds)
+```
+
+Somehow, we have a partcipant who took 258951 seconds. We set the maximum allowable time on MTurk to 30 minutes, so let's filter out any values above 3600 seconds.
+```{r}
+d_1 <- d[d$duration_seconds <= 3600]
+```
+
+Let's see what the distribution of duration looks like.
+
+```{r}
+ggplot(data = d_1) + 
+  geom_histogram(mapping = aes(x = duration_seconds), binwidth = 30)
+```
+
+## Distribution of Control and Treatment Questions
+
+#### Control Questions
+
+We know for each survey 2 of 5 questions were asked in control, so we should have approximately 400 control questions for each of the 5 categories.
+
+```{r}
+keys <- c("undesirable", "jobs", "oversight", "recommender", "beneficial")
+control_counts <- c(sum(na.omit(d_1$control_beneficial > 0)), sum(na.omit(d_1$control_jobs > 0)), sum(na.omit(d_1$control_oversight > 0)),sum(na.omit(d_1$control_recommender > 0)),sum(na.omit(d_1$control_beneficial > 0)))
+control_data <- data.table(keys, control_counts)
+```
+
+```{r}
+ggplot(data = control_data) +
+  geom_bar(mapping = aes(x = keys, y = control_counts), stat = "identity")
+```
+
+#### Treatment Questions
+
+We know for each survey 3 of 5 questions were asked in treatment, so we should have approximately 600 treatment questions for each of the 5 categories.
+
+```{r}
+treatment_counts <- c(sum(na.omit(d_1$treat_beneficial > 0)), sum(na.omit(d_1$treat_jobs > 0)), sum(na.omit(d_1$treat_oversight > 0)),sum(na.omit(d_1$treat_recommender > 0)),sum(na.omit(d_1$treat_beneficial > 0)))
+treatment_data <- data.table(keys, treatment_counts)
+```
+
+```{r}
+ggplot(data = treatment_data) +
+  geom_bar(mapping = aes(x = keys, y = treatment_counts), stat = "identity")
+```
+
+#### Total View
+
+Here's what the total distribution looks like:
+```{r}
+control_data$type <- 'control'
+treatment_data$type <- 'treatment'
+```
+```{r}
+#setnames(control_data, "control_counts","counts")
+#setnames(treatment_data, "treatment_counts","counts")
+counts_data <- rbind(control_data, treatment_data)
+```
+```{r}
+ggplot(data = counts_data) +
+  geom_bar(mapping = aes(x = keys, y = counts, fill = type), stat = "identity")
+```
+```{r}
+ggsave('question_counts.png')
+```
+
+
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

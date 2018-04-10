@@ -1,0 +1,185 @@
+---
+title: "Pilot 2 - Exploratory Data Analysis"
+author: "Chet Gutwein"
+date: "4/9/2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Libraries
+
+```{r }
+library(data.table)
+library(dplyr)
+library(magrittr)
+library(ggplot2)
+library(gridExtra)
+library(ggExtra)
+```
+
+## Read Data
+
+```{r}
+d <- fread('./Cleaned_Pilot2.csv')
+```
+
+## Duration
+
+First, we'll take a look at how long participants took to take the survey. 
+
+```{r}
+summary(d$duration_seconds)
+```
+
+Let's see what the distribution of duration looks like.
+
+```{r}
+ggplot(data = d) + 
+  geom_histogram(mapping = aes(x = duration_seconds), binwidth = 60)
+```
+
+## Distribution of Control and Treatment Questions
+
+#### Control Questions
+
+We know for each survey 2 of 5 questions were asked in control, so we should have approximately 12 control questions for each of the 5 categories.
+
+```{r}
+keys <- c("undesirable", "jobs", "oversight", "recommender", "beneficial")
+control_counts <- c(sum(na.omit(d$control_beneficial > 0)), sum(na.omit(d$control_jobs > 0)), sum(na.omit(d$control_oversight > 0)),sum(na.omit(d$control_recommender > 0)),sum(na.omit(d$control_beneficial > 0)))
+control_data <- data.table(keys, control_counts)
+```
+
+```{r}
+ggplot(data = control_data) +
+  geom_bar(mapping = aes(x = keys, y = control_counts), stat = "identity")
+```
+
+#### Treatment Questions
+
+We know for each survey 3 of 5 questions were asked in treatment, so we should have approximately 18 treatment questions for each of the 5 categories.
+
+```{r}
+treatment_counts <- c(sum(na.omit(d$treat_beneficial > 0)), sum(na.omit(d$treat_jobs > 0)), sum(na.omit(d$treat_oversight > 0)),sum(na.omit(d$treat_recommender > 0)),sum(na.omit(d$treat_beneficial > 0)))
+treatment_data <- data.table(keys, treatment_counts)
+```
+
+```{r}
+ggplot(data = treatment_data) +
+  geom_bar(mapping = aes(x = keys, y = treatment_counts), stat = "identity")
+```
+
+#### Total View
+
+Here's what the total distribution looks like:
+```{r}
+control_data$type <- 'control'
+treatment_data$type <- 'treatment'
+```
+```{r}
+setnames(control_data, "control_counts","counts")
+setnames(treatment_data, "treatment_counts","counts")
+counts_data <- rbind(control_data, treatment_data)
+```
+```{r}
+ggplot(data = counts_data) +
+  geom_bar(mapping = aes(x = keys, y = counts, fill = type), stat = "identity")
+```
+```{r}
+ggsave('question_counts_pilot_2.png')
+```
+
+## Location of Participants
+
+Participants should be located in the United States, and hopefully have a distribution across the country that looks reasonably random.
+
+```{r}
+# more libraries for maps
+library(ggmap)
+library(maps)
+library(mapdata)
+```
+```{r}
+usa <- map_data("usa")
+ggplot() + geom_polygon(data = usa, aes(x=long, y = lat, group = group)) + 
+  coord_fixed(1.3) + geom_point(data = d, aes(x = LocationLongitude, y = LocationLatitude), color = "violet", size = 3) +  geom_point(data = d, aes(x = LocationLongitude, y = LocationLatitude), color = "yellow", size = 2)
+```
+```{r}
+ggsave('usa_map_pilot_2.png')
+```
+
+## Control and Treatment
+
+Let's take a look at how the ratings for each of the 5 questions stack up in treatment vs. control. To visualize this, we'll superimpose a density plot of the score responses for each. Density plots might look a little strange because it's a pilot and we only have a total of 30 responses, but this should be a pretty usefully view for the experimental results. 
+
+```{r}
+d$assignment_oversight <- as.factor(d$assignment_oversight)
+g1 <- d %>%
+    ggplot(aes(x = score_oversight, fill = assignment_oversight)) +
+    geom_density(alpha = 0.7) +
+    scale_fill_manual(values = c('darkblue', 'grey')) + 
+    labs(x = 'Score', y = '', title = 'Does AI require regulatory oversight?')
+
+d$assignment_beneficial <- as.factor(d$assignment_beneficial)
+g2 <- d %>%
+    ggplot(aes(x = score_beneficial, fill = assignment_beneficial)) +
+    geom_density(alpha = 0.7) +
+    scale_fill_manual(values = c('darkblue', 'grey')) + 
+    labs(x = 'Score', y = '', title = 'Will AI prove beneficial to society?')
+
+d$assignment_undesirable <- as.factor(d$assignment_undesirable)
+g3 <- d %>%
+    ggplot(aes(x = score_undesirable, fill = assignment_undesirable)) +
+    geom_density(alpha = 0.7) +
+    scale_fill_manual(values = c('darkblue', 'grey')) + 
+    labs(x = 'Score', y = '', title = 'Will AI have undesirable consequences?')
+
+d$assignment_jobs <- as.factor(d$assignment_jobs)
+g4 <- d %>%
+    ggplot(aes(x = score_jobs, fill = assignment_jobs)) +
+    geom_density(alpha = 0.7) +
+    scale_fill_manual(values = c('darkblue', 'grey')) + 
+    labs(x = 'Score', y = '', title = 'Will AI threaten your job security?')
+
+d$assignment_recommender <- as.factor(d$assignment_recommender)
+g5 <- d %>%
+    ggplot(aes(x = score_recommender, fill = assignment_recommender)) +
+    geom_density(alpha = 0.7) +
+    scale_fill_manual(values = c('darkblue', 'grey')) + 
+    labs(x = 'Score', y = '', title = 'Do you favor recommender system over a friend?')
+```
+
+Duration of Survey Time vs. Correct Response to attention question
+
+```{r}
+d$attention_correct <- as.factor(d$attention_correct)
+g6 <- d %>%
+    ggplot(aes(x = duration_seconds, fill = attention_correct)) +
+    geom_density(alpha = 0.7) +
+    scale_fill_manual(values = c('darkblue', 'grey')) + 
+    labs(x = 'Duration of survey (sec)', y = '', title = 'Duration of Survey')
+```
+
+```{r}
+attention_percentages <- c(mean(d$attention_correct[d$attention_question_code == 1]), mean(d$attention_correct[d$attention_question_code == 2]), mean(d$attention_correct[d$attention_question_code == 3]), 1 - mean(d$attention_correct[d$attention_question_code == 4]), mean(d$attention_correct[d$attention_question_code == 5]))
+keys <- c("undesirable", "jobs", "oversight", "recommender", "beneficial")
+attention_table <- data.table(keys, attention_percentages)
+```
+```{r}
+g8 <- ggplot(data = attention_table) +
+  geom_bar(mapping = aes(x = keys, y = attention_percentages), fill = 'darkblue', stat = "identity") + coord_flip()
+mean(d$attention_correct)
+ggsave('attention_q_2.png')
+```
+
+Checking some things by re-loading the raw data.
+```{r}
+d_raw <- fread('Pilot2_Expert_mTurk_04_05_2018.csv')
+```
+```{r}
+d$attention_correct[d$attention_question_code == 4] <- 1 - d$attention_correct[d$attention_question_code == 4]
+```
+
