@@ -40,7 +40,8 @@ par(mfrow=c(1,2))
 summary(df$duration_seconds)
 #hist(df$duration_seconds, breaks = 25)
 boxplot(df$duration_seconds)
-hist(df[df$duration_seconds<1000]$duration_seconds, breaks=50)
+df_1000 <- subset(df, df$duration_seconds<1000)
+hist(df_1000$duration_seconds, breaks=50)
 ```
 
 ## 2.2 Location (Longitude, Latitude)
@@ -131,7 +132,7 @@ correct_answer
 
 Q24: T/F  Recommender (do not use your personal data)
 
-14.4% of peole get this right
+85.5% of peole get this right
 
 ```{r}
 correct_answer = mean(df$attention_recommender_correct, na.rm = TRUE)
@@ -141,7 +142,7 @@ correct_answer
 
 What percent of people in the survey get their attention question right?
 
-61% do - so our never takers will be 39% of people.
+76% do - so our never takers will be 24% of people.
 
 ```{r}
 correct <- mean(df$attention_correct, na.rm = TRUE)
@@ -299,7 +300,7 @@ list_mTurkCode <- df$mTurkCode
 ```
 
 ```{r}
-View(df)
+#View(df)
 ```
 
 
@@ -336,7 +337,7 @@ library(plm)
 #    AI_educated + factor(mTurkCode), data = df, index=c("mTurkCode"),model = "within",effect="individual")
 
 
-summary(model_beneficial_FE)
+#summary(model_beneficial_FE)
 
 
 ```
