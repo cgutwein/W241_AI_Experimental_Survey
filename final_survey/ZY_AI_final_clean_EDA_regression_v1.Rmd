@@ -1,0 +1,596 @@
+---
+title: 'W241: AI Project Final Survey'
+subtitle: 'Data Cleaning, EDA, Regression'
+author: "Zhaoning Yu"
+date: "4/11/2018"
+output: pdf_document
+---
+
+# Things done in this Rmd:
+
+- Read data file "Cleaned_Full_Survey_dataV1.csv" into dataframe "d1"
+
+- Create a cleaned version "d2": adding new variables for attention questions, binary variables for duration
+
+- EDA
+
+- Regression tables comparing different specifications
+
+
+```{r setup, include=FALSE, message=FALSE}
+library(knitr)
+opts_chunk$set(tidy.opts=list(width.cutoff=60),tidy=TRUE)
+# knitr::opts_chunk$set(echo = TRUE)
+
+# load packages 
+library(Hmisc)              # describe()
+library(data.table)
+library(foreign)            # ??? what does this package do ????????
+library(sandwich)           # vcovHC for robust SE calculation
+library(lmtest)             # coeftest 
+library(AER)                # ivreg
+library(multiwayvcov)       # cluster.vcov()
+library(stargazer)          # regression tables
+```
+
+
+# 1. Read Data
+
+## 1.1 Read Data
+
+First read the cleaned full survey data from KH:
+
+```{r}
+rm(list=ls())
+
+d1 <- fread('./Cleaned_Full_Survey_dataV1.csv')
+head(d1)
+```
+
+### 1.2 Create a factor column for attention question 
+
+```{r}
+# create indicator vectors to indicate the attention question type
+t1 <- 1*!is.na(d1$attention_undesirable) 
+t2 <- 2*!is.na(d1$attention_jobs) 
+t3 <- 3*!is.na(d1$attention_oversight) 
+t4 <- 4*!is.na(d1$attention_recommender) 
+t5 <- 5*!is.na(d1$attention_beneficial) 
+
+# add a vector column for attention question
+d1$attention_question_code <- t1 + t2 + t3 + t4 + t5
+d1$attention_question <- as.factor(t1 + t2 + t3 + t4 + t5)
+
+# rename the levels
+levels(d1$attention_question)[levels(d1$attention_question)=="1"] <- "undesirable"
+levels(d1$attention_question)[levels(d1$attention_question)=="2"] <- "jobs"
+levels(d1$attention_question)[levels(d1$attention_question)=="3"] <- "oversight"
+levels(d1$attention_question)[levels(d1$attention_question)=="4"] <- "recommender"
+levels(d1$attention_question)[levels(d1$attention_question)=="5"] <- "beneficial"
+
+# levels(d1$attention_question)[levels(d1$attention_question)=="0"] <- "what"
+```
+
+## 1.3 Remove some columns and re-arrange:
+
+### Columns that are removed
+
+- "Progress" column has a single value of 100
+- "Finished" column has a single value of 1
+- "RecordedDate" column has the same information as "EndDate" (+1 second)
+
+### Note:
+
+- "Assignment_##" columns are indicator whether subject assigned to treatment or control for each question
+- "Score_##" columns are answers for the question (as control or treatment depending on assignment)
+
+```{r}
+d2 <- subset(d1, select=c(ResponseId, mTurkCode, 
+                          IPAddress, LocationLatitude, LocationLongitude,
+                          StartDate, EndDate, duration_seconds, 
+                          gender, education_level, house_income,
+                          AI_educated, AI_attitude, learn_anything,
+                          assignment_undesirable, assignment_jobs, assignment_oversight, assignment_recommender, assignment_beneficial,
+                          score_undesirable, score_jobs, score_oversight, score_recommender, score_beneficial,
+                          control_undesirable, control_jobs, control_oversight, control_recommender, control_beneficial,
+                          treat_undesirable, treat_jobs, treat_oversight, treat_recommender, treat_beneficial,
+                          attention_question_code, attention_question, attention_correct))
+
+# create a categorical variable for duration_seconds
+d2$duration = cut(d2$duration_seconds, breaks = c(0, 100, 500, Inf), 
+                 labels = c("short", "normal","long"))
+
+# create a binary variable to filter out both short and long survey takers
+d2$duration_bin = d2$duration=="normal"
+
+str(d2)
+```
+## 1.4 Convert StartDate and EndDate strings to datetime?
+
+## 1.5 Write dataframe to csv and check result
+
+```{r}
+write.csv(d2, 'Cleaned_Full_Survey_dataV2.csv', row.names=FALSE)
+```
+
+
+# 2. EDA 
+
+## 2.1 ResponseID, mTurkCode
+
+There are 1053 rows in the dataset, there are 1053 ResponseID and 1053 mTurkCode - so each row has a **unique ResponseID and a unique mTurkCode**.
+
+However, there are only 1042 unique IPAddress, there are 11 repeating IPAddresses, the number is not big, probably not a big problem.
+
+```{r}
+describe(d2$ResponseId)
+
+describe(d2$mTurkCode)
+
+describe(d2$IPAddress)
+```
+
+
+## 2.2 Duration
+
+Median for taking the survey is 168 sec, there are 6 people used more than 2000 seconds (30 min).
+
+```{r}
+describe(d2$duration_seconds)
+summary(d2$duration_seconds)
+
+hist(d2[d2$duration_seconds<1000]$duration_seconds, breaks=50, prob=T)        # prob=T for density plot
+lines(density(d2[d2$duration_seconds<1000]$duration_seconds), col="red")      # adding a density estimate to the historgrm
+
+```
+
+For fast survey takers (18%), the attention question correct rate is 61%, learned something 57%.
+For normal survey takers (79%), the attention question correct rate is 80%, learned something 65%.
+For long survey takers (3%), the attention question correct rate is 65%, learned something 75%.
+
+Probably both "short" and "long" are not good.
+
+```{r}
+table(d2$duration)
+table(d2$attention_correct, d2$duration)
+table(d2$learn_anything, d2$duration)
+```
+
+
+## 2.3 Location (longitude, latitude)
+
+Note there are 1053 rows but only 959 distinct longitude, latitude  values.
+
+```{r}
+describe(d2$LocationLatitude)
+describe(d2$LocationLongitude)
+```
+
+```{r}
+plot(d2$LocationLongitude, d2$LocationLatitude)
+```
+
+## 2.4 Gender
+
+# WHICH CODE FOR MEN, WHICH FOR WOMEN?????????? 
+
+There are 52% "0" and 48% "1"
+
+```{r}
+describe(d2$gender)
+```
+
+## 2.5 Education Level
+
+```{r fig.height=3.5, fig.width=8, echo=FALSE}
+describe(d2$education_level)
+
+par(mfrow=c(1,2))
+hist(d2$education_level, breaks = 10)
+boxplot(d2$education_level)
+```
+
+## 2.6 Household Income
+
+Most people in 0-50000 and 50000-100000 brackets.
+```{r fig.height=3.5, fig.width=8, echo=FALSE}
+par(mfrow=c(1,2))
+describe(d2$house_income)
+hist(d2$house_income, breaks = 10)
+boxplot(d2$house_income)
+```
+
+## 2.7 AI_educated
+
+Mean is 2.738, median is 3.
+
+```{r fig.height=3.5, fig.width=8, echo=FALSE}
+par(mfrow=c(1,2))
+describe(d2$AI_educated)
+hist(d2$AI_educated, breaks = 10)
+boxplot(AI_educated ~ gender, data=d2)
+```
+
+## 2.8 AI_attitude
+
+```{r fig.height=3.5, fig.width=8, echo=FALSE}
+par(mfrow=c(1,2))
+describe(d2$AI_attitude)
+hist(d2$AI_attitude, breaks = 10)
+boxplot(AI_attitude ~ gender, data = d2)
+```
+
+## 2.9 Learn anything
+
+```{r fig.height=3.5, fig.width=8, echo=FALSE}
+par(mfrow=c(1,2))
+describe(d2$learn_anything)
+hist(d2$learn_anything, breaks = 10)
+boxplot(learn_anything ~ gender, data = d2)
+```
+
+# 3. Attention Questions
+
+## 3.1 T/F AI undesirable effects (AI gains consciousness)
+
+51.6 % of people got this question right.
+
+```{r}
+describe(d2[d2$attention_question=='undesirable']$attention_correct)
+```
+
+## 3.2 T/F Jobs
+
+73.7 % of people answered correctly.
+
+```{r}
+describe(d2[d2$attention_question=='jobs']$attention_correct)
+```
+
+## 3.3 T/F Oversight (Guidelines AI oversight in place already)
+
+79.3% people answered correctly.
+
+```{r}
+describe(d2[d2$attention_question=='oversight']$attention_correct)
+```
+
+##3.4 T/F  Recommender (do not use your personal data)
+
+85.5% people got it correctly.
+
+```{r}
+describe(d2[d2$attention_question=='recommender']$attention_correct)
+```
+
+## 3.5 T/F  beneficial (AI used in spam block)
+
+86% answered correctly.
+
+```{r}
+describe(d2[d2$attention_question=='beneficial']$attention_correct)
+```
+
+Overrall, 76% attention questions were answered correcly.
+
+```{r}
+describe(d2$attention_correct)
+```
+
+# Can we say 24% are Never-Takers ????
+
+People who answered attention questions correctly spent more time on the survey.
+
+People who answered incorrectly spent 179s on the survey, people who answered correctly spent 195 seconds on the survey (~14% more time).
+
+However, the difference is not statistically significant, but noticeable.
+
+```{r fig.height=3.5, fig.width=10, echo=FALSE}
+attention_1_duration <- d2[d2$attention_correct==1 & d2$duration_seconds<2000]$duration_seconds
+attention_0_duration <- d2[d2$attention_correct==0 & d2$duration_seconds<2000]$duration_seconds
+
+t.test(attention_0_duration, attention_1_duration)
+
+par(mfrow=c(1,3))
+hist(attention_0_duration, breaks=20)
+hist(attention_1_duration, breaks=20)
+boxplot(duration_seconds ~ attention_correct, data=d2[d2$duration_seconds<500])
+```
+
+# 3. Control-Treatment questions
+
+## 3.0 Is the assigment balanced?
+
+For each question, 60% are in treatment, 40% are in control.
+
+```{r}
+mean(d2$assignment_beneficial)
+mean(d2$assignment_recommender)
+mean(d2$assignment_oversight)
+mean(d2$assignment_recommender)
+mean(d2$assignment_undesirable)
+```
+
+## 3.1 AI_Q_1: beneficial
+
+Treatment and control are not significantly different.
+
+```{r fig.height=3.5, fig.width=10, echo=FALSE}
+mean(d2[d2$assignment_beneficial==0]$score_beneficial)
+mean(d2[d2$assignment_beneficial==1]$score_beneficial)
+
+t.test(d2[d2$assignment_beneficial==0]$score_beneficial, d2[d2$assignment_beneficial==1]$score_beneficial)
+wilcox.test(d2[d2$assignment_beneficial==0]$score_beneficial, d2[d2$assignment_beneficial==1]$score_beneficial)
+
+par(mfrow=c(1,3))
+hist(d2[d2$assignment_beneficial==0]$score_beneficial)
+hist(d2[d2$assignment_beneficial==1]$score_beneficial)
+boxplot(score_beneficial ~ assignment_beneficial, data=d2)
+```
+
+## 3.2 AI_Q_2: jobs
+
+Treatment and control are not significantly different, but noticeable, the treatment is lower.
+
+```{r fig.height=3.5, fig.width=10, echo=FALSE}
+mean(d2[d2$assignment_jobs==0]$score_jobs)
+mean(d2[d2$assignment_jobs==1]$score_jobs)
+
+t.test(d2[d2$assignment_jobs==0]$score_jobs, d2[d2$assignment_jobs==1]$score_jobs)
+wilcox.test(d2[d2$assignment_jobs==0]$score_jobs, d2[d2$assignment_jobs==1]$score_jobs)
+
+par(mfrow=c(1,3))
+hist(d2[d2$assignment_jobs==0]$score_jobs)
+hist(d2[d2$assignment_jobs==1]$score_jobs)
+boxplot(score_jobs ~ assignment_jobs, data=d2)
+```
+
+
+## 3.3 AI_Q_3: oversight
+
+Treatment and control are not significantly different,  the treatment is higher.
+
+```{r fig.height=3.5, fig.width=10, echo=FALSE}
+mean(d2[d2$assignment_oversight==0]$score_oversight)
+mean(d2[d2$assignment_oversight==1]$score_oversight)
+
+t.test(d2[d2$assignment_oversight==0]$score_oversight, d2[d2$assignment_oversight==1]$score_oversight)
+wilcox.test(d2[d2$assignment_oversight==0]$score_oversight, d2[d2$assignment_oversight==1]$score_oversight)
+
+par(mfrow=c(1,3))
+hist(d2[d2$assignment_oversight==0]$score_oversight)
+hist(d2[d2$assignment_oversight==1]$score_oversight)
+boxplot(score_oversight ~ assignment_oversight, data=d2)
+```
+
+
+## 3.4 AI_Q_4: recommender
+
+Treatment and control are not significantly different, the treatment is lower.
+
+```{r fig.height=3.5, fig.width=10, echo=FALSE}
+mean(d2[d2$assignment_recommender==0]$score_recommender)
+mean(d2[d2$assignment_recommender==1]$score_recommender)
+
+t.test(d2[d2$assignment_recommender==0]$score_recommender, d2[d2$assignment_recommender==1]$score_recommender)
+wilcox.test(d2[d2$assignment_recommender==0]$score_recommender, d2[d2$assignment_recommender==1]$score_recommender)
+
+par(mfrow=c(1,3))
+hist(d2[d2$assignment_recommender==0]$score_recommender)
+hist(d2[d2$assignment_recommender==1]$score_recommender)
+boxplot(score_recommender ~ assignment_recommender, data=d2)
+```
+
+## 3.5 AI_Q_5: beneficial
+
+Treatment and control are not significantly different, the treatment is lower.
+
+```{r fig.height=3.5, fig.width=10, echo=FALSE}
+mean(d2[d2$assignment_beneficial==0]$score_beneficial)
+mean(d2[d2$assignment_beneficial==1]$score_beneficial)
+
+t.test(d2[d2$assignment_beneficial==0]$score_beneficial, d2[d2$assignment_beneficial==1]$score_beneficial)
+wilcox.test(d2[d2$assignment_beneficial==0]$score_beneficial, d2[d2$assignment_beneficial==1]$score_beneficial)
+
+par(mfrow=c(1,3))
+hist(d2[d2$assignment_beneficial==0]$score_beneficial)
+hist(d2[d2$assignment_beneficial==1]$score_beneficial)
+boxplot(score_beneficial ~ assignment_beneficial, data=d2)
+```
+
+
+# 4. Correlations 
+
+```{r}
+require(ggplot2)
+require(GGally)
+
+d3=subset(d2, select=c(gender, education_level, house_income, AI_educated, AI_attitude, learn_anything, attention_correct))
+
+ggcorr(d3, label = TRUE)
+```
+
+
+# 5. Regression Tables
+
+In the following regression models, we control for the following and compare different specifications:
+
+- "AI_attitude", "AI_educated": to control for people's attitude toward AI before taking the survey
+
+- "gender", "education_level", "house_income": to control for demographic characteristics
+
+- "learn_anything", "duration_bin": to control for people's attention level for taking the survey
+
+# 5.1 undesirable
+
+```{r, warning=FALSE}
+m.1.1 <- lm(score_undesirable ~ assignment_undesirable, data=d2)
+#coeftest(m.1.1, vcov = vcovHC)
+
+m.1.2 <- lm(score_undesirable ~ assignment_undesirable + AI_attitude + AI_educated, data=d2)
+#coeftest(m.1.2, vcov = vcovHC)
+
+m.1.3 <- lm(score_undesirable ~ assignment_undesirable + education_level + house_income + gender, data=d2)
+#coeftest(m.1.3, vcov = vcovHC)
+
+m.1.4 <- lm(score_undesirable ~ assignment_undesirable + AI_attitude + AI_educated 
+                 + education_level + house_income + gender, data=d2)
+#coeftest(m.1.4, vcov = vcovHC)
+
+m.1.5 <- lm(score_undesirable ~ assignment_undesirable + AI_attitude + AI_educated 
+                 + education_level + house_income + gender + learn_anything , data=d2)
+#coeftest(m.1.5, vcov = vcovHC)
+
+m.1.6 <- lm(score_undesirable ~ assignment_undesirable + AI_attitude + AI_educated 
+                 + education_level + house_income + gender + learn_anything + duration_bin, data=d2)
+#coeftest(m.1.6, vcov = vcovHC)
+
+se.m.1.1 = sqrt(diag(vcovHC(m.1.1)))
+se.m.1.2 = sqrt(diag(vcovHC(m.1.2)))
+se.m.1.3 = sqrt(diag(vcovHC(m.1.3)))
+se.m.1.4 = sqrt(diag(vcovHC(m.1.4)))
+se.m.1.5 = sqrt(diag(vcovHC(m.1.5)))
+se.m.1.6 = sqrt(diag(vcovHC(m.1.6)))
+
+stargazer(m.1.1, m.1.2, m.1.3, m.1.4, m.1.5, m.1.6,  type = "text", 
+          se = list(se.m.1.1, se.m.1.2, se.m.1.3, se.m.1.4, se.m.1.5, se.m.1.6),
+          title = "undesirable",
+          omit.stat = c("f", "ser"),
+          star.cutoffs = c(0.05,0.01,0.001))
+# type = "text"
+```
+
+# 5.2 jobs
+
+```{r, warning=FALSE}
+m.2.1 <- lm(score_jobs ~ assignment_jobs, data=d2)
+
+m.2.2 <- lm(score_jobs ~ assignment_jobs + AI_attitude + AI_educated, data=d2)
+
+m.2.3 <- lm(score_jobs ~ assignment_jobs + education_level + house_income + gender, data=d2)
+
+m.2.4 <- lm(score_jobs ~ assignment_jobs + AI_attitude + AI_educated 
+                 + education_level + house_income + gender, data=d2)
+
+m.2.5 <- lm(score_jobs ~ assignment_jobs + AI_attitude + AI_educated 
+                 + education_level + house_income + gender + learn_anything , data=d2)
+
+m.2.6 <- lm(score_jobs ~ assignment_jobs + AI_attitude + AI_educated 
+                 + education_level + house_income + gender + learn_anything + duration_bin, data=d2)
+
+se.m.2.1 = sqrt(diag(vcovHC(m.2.1)))
+se.m.2.2 = sqrt(diag(vcovHC(m.2.2)))
+se.m.2.3 = sqrt(diag(vcovHC(m.2.3)))
+se.m.2.4 = sqrt(diag(vcovHC(m.2.4)))
+se.m.2.5 = sqrt(diag(vcovHC(m.2.5)))
+se.m.2.6 = sqrt(diag(vcovHC(m.2.6)))
+
+stargazer(m.2.1, m.2.2, m.2.3, m.2.4, m.2.5, m.2.6,  type = "text", 
+          se = list(se.m.2.1, se.m.2.2, se.m.2.3, se.m.2.4, se.m.2.5, se.m.2.6),
+          title = "jobs",
+          omit.stat = c("f", "ser"),
+          star.cutoffs = c(0.05,0.01,0.001))
+```
+
+
+# 5.3 oversight
+
+```{r, warning=FALSE}
+m.3.1 <- lm(score_oversight ~ assignment_oversight, data=d2)
+
+m.3.2 <- lm(score_oversight ~ assignment_oversight + AI_attitude + AI_educated, data=d2)
+
+m.3.3 <- lm(score_oversight ~ assignment_oversight + education_level + house_income + gender, data=d2)
+
+m.3.4 <- lm(score_oversight ~ assignment_oversight + AI_attitude + AI_educated 
+                 + education_level + house_income + gender, data=d2)
+
+m.3.5 <- lm(score_oversight ~ assignment_oversight + AI_attitude + AI_educated 
+                 + education_level + house_income + gender + learn_anything , data=d2)
+
+m.3.6 <- lm(score_oversight ~ assignment_oversight + AI_attitude + AI_educated 
+                 + education_level + house_income + gender + learn_anything + duration_bin, data=d2)
+
+se.m.3.1 = sqrt(diag(vcovHC(m.3.1)))
+se.m.3.2 = sqrt(diag(vcovHC(m.3.2)))
+se.m.3.3 = sqrt(diag(vcovHC(m.3.3)))
+se.m.3.4 = sqrt(diag(vcovHC(m.3.4)))
+se.m.3.5 = sqrt(diag(vcovHC(m.3.5)))
+se.m.3.6 = sqrt(diag(vcovHC(m.3.6)))
+
+stargazer(m.3.1, m.3.2, m.3.3, m.3.4, m.3.5, m.3.6, type = "text", 
+          se = list(se.m.3.1, se.m.3.2, se.m.3.3, se.m.3.4, se.m.3.5, se.m.3.6),
+          title = "oversight",
+          omit.stat = c("f", "ser"),
+          star.cutoffs = c(0.05,0.01,0.001))
+```
+
+# 5.4 recommender
+
+```{r, warning=FALSE}
+m.4.1 <- lm(score_recommender ~ assignment_recommender, data=d2)
+
+m.4.2 <- lm(score_recommender ~ assignment_recommender + AI_attitude + AI_educated, data=d2)
+
+m.4.3 <- lm(score_recommender ~ assignment_recommender + education_level + house_income + gender, data=d2)
+
+m.4.4 <- lm(score_recommender ~ assignment_recommender + AI_attitude + AI_educated 
+                 + education_level + house_income + gender, data=d2)
+
+m.4.5 <- lm(score_recommender ~ assignment_recommender + AI_attitude + AI_educated 
+                 + education_level + house_income + gender + learn_anything , data=d2)
+
+m.4.6 <- lm(score_recommender ~ assignment_recommender + AI_attitude + AI_educated 
+                 + education_level + house_income + gender + learn_anything + duration_bin, data=d2)
+
+se.m.4.1 = sqrt(diag(vcovHC(m.4.1)))
+se.m.4.2 = sqrt(diag(vcovHC(m.4.2)))
+se.m.4.3 = sqrt(diag(vcovHC(m.4.3)))
+se.m.4.4 = sqrt(diag(vcovHC(m.4.4)))
+se.m.4.5 = sqrt(diag(vcovHC(m.4.5)))
+se.m.4.6 = sqrt(diag(vcovHC(m.4.6)))
+
+stargazer(m.4.1, m.4.2, m.4.3, m.4.4, m.4.5, m.4.6,  type = "text", 
+          se = list(se.m.4.1, se.m.4.2, se.m.4.3, se.m.4.4, se.m.4.5, se.m.4.6),
+          title = "recommender",
+          omit.stat = c("f", "ser"),
+          star.cutoffs = c(0.05,0.01,0.001))
+```
+
+# 5.5 beneficial
+
+```{r, warning=FALSE}
+m.5.1 <- lm(score_beneficial ~ assignment_beneficial, data=d2)
+
+m.5.2 <- lm(score_beneficial ~ assignment_beneficial + AI_attitude + AI_educated, data=d2)
+
+m.5.3 <- lm(score_beneficial ~ assignment_beneficial + education_level + house_income + gender, data=d2)
+
+m.5.4 <- lm(score_beneficial ~ assignment_beneficial + AI_attitude + AI_educated 
+                 + education_level + house_income + gender, data=d2)
+
+m.5.5 <- lm(score_beneficial ~ assignment_beneficial + AI_attitude + AI_educated 
+                 + education_level + house_income + gender + learn_anything , data=d2)
+
+m.5.6 <- lm(score_beneficial ~ assignment_beneficial + AI_attitude + AI_educated 
+                 + education_level + house_income + gender + learn_anything + duration_bin, data=d2)
+
+se.m.5.1 = sqrt(diag(vcovHC(m.5.1)))
+se.m.5.2 = sqrt(diag(vcovHC(m.5.2)))
+se.m.5.3 = sqrt(diag(vcovHC(m.5.3)))
+se.m.5.4 = sqrt(diag(vcovHC(m.5.4)))
+se.m.5.5 = sqrt(diag(vcovHC(m.5.5)))
+se.m.5.6 = sqrt(diag(vcovHC(m.5.6)))
+
+stargazer(m.5.1, m.5.2, m.5.3, m.5.4, m.5.5, m.5.6,   type = "text", 
+          se = list(se.m.5.1, se.m.5.2, se.m.5.3, se.m.5.4, se.m.5.5, se.m.5.6),
+          title = "beneficial",
+          omit.stat = c("f", "ser"),
+          star.cutoffs = c(0.05,0.01,0.001))
+```
+
+
+
+
+
+
