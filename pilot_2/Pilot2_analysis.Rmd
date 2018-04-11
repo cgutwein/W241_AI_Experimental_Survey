@@ -183,3 +183,148 @@ d_raw <- fread('Pilot2_Expert_mTurk_04_05_2018.csv')
 d$attention_correct[d$attention_question_code == 4] <- 1 - d$attention_correct[d$attention_question_code == 4]
 ```
 
+## Treatment Effect Analysis
+```{r}
+df <- d
+```
+
+### AI 1: Undesirable effects: control_undesirable, treat_undesirable
+
+```{r fig.height=5, fig.width=12, echo=FALSE}
+library(Hmisc) 
+describe(df$control_undesirable)
+describe(df$treat_undesirable)
+
+par(mfrow=c(2,4))
+hist(df$control_undesirable, breaks = 10)
+hist(df$treat_undesirable, breaks = 10)
+boxplot(df$control_undesirable)
+boxplot(df$treat_undesirable)
+```
+
+$$
+ATE_{undesirable} = 2.833 - 2.9 = -0.067
+$$
+
+Another way to interpret the result is to run a linear regression and take into consideration some fixed effects and/or covariates. In our survey, one of the preliminary questions asked participants  
+
+"How do you feel in general towards artificial intelligence?"   
+
+```{r}
+ggplot(data = d) + 
+  geom_histogram(mapping = aes(x = AI_attitude), bins = 5, fill = 'darkblue', col='gray')
+```
+
+We have taken this variable into consideration along with the treatment and run a regression using the form:
+$$
+Score_{undesirable} = \alpha + \beta_{treat}*Treatment + \beta_{attitude}*Attitude + \epsilon
+$$
+```{r}
+lm_1 <- lm(score_undesirable ~ assignment_undesirable + AI_attitude, data=d)
+```
+```{r}
+summary(lm_1)
+```
+
+Here, we can see that there is a slightly stronger treatment effect, however, none of these are significant. We wouldn't expect significant results from a pilot study of 30 subjects anyway.
+
+### AI 2: jobs: control_jobs, treat_jobs
+
+```{r fig.height=5, fig.width=12, echo=FALSE}
+describe(df$control_jobs)
+describe(df$treat_jobs)
+```
+
+$$
+ATE_{jobs} = 2.714 - 3.714 = -1.0
+$$
+
+```{r}
+lm_2 <- lm(score_jobs ~ assignment_jobs + AI_attitude, data=d)
+summary(lm_2)
+```
+
+
+### AI 3: Oversight: control_oversight, treat_oversight
+
+```{r}
+describe(df$control_oversight)
+describe(df$treat_oversight)
+```
+
+$$
+ATE_{oversight} = 4.222 - 3.9 = 0.322
+$$
+
+```{r}
+lm_3 <- lm(score_oversight ~ assignment_oversight + AI_attitude, data=d)
+summary(lm_3)
+```
+
+### AI 4: Recommender Systems: control_recommender, treat_recommender
+
+```{r echo=FALSE}
+describe(df$control_recommender)
+describe(df$treat_recommender)
+```
+
+$$
+ATE_{recommender} = 2.333 - 2.9 = -0.567
+$$
+
+```{r}
+lm_4 <- lm(score_recommender ~ assignment_recommender + AI_attitude, data=d)
+summary(lm_4)
+```
+
+### AI 5: Beneficial
+
+```{r echo=FALSE}
+describe(df$control_beneficial)
+describe(df$treat_beneficial)
+```
+
+$$
+ATE_{beneficial} = 2.75 - 3.083 = -0.323
+$$
+
+```{r}
+lm_5 <- lm(score_beneficial ~ assignment_beneficial + AI_attitude, data=d)
+summary(lm_5)
+```
+
+
+## Covariates
+
+We surveyed participants for the following information to include as covariates:
+ * Education level in relation to AI (Scale from 1 to 5)
+ * Annual Household Income
+ * Highest Education Completed
+ * Gender
+ * Did you learn anything from taking this survey?
+
+```{r}
+cov_1 <- ggplot(data = d) + 
+  geom_histogram(mapping = aes(x = AI_educated), bins = 5, fill = 'darkblue', col='gray')
+
+cov_2 <- ggplot(data = d) + 
+  geom_histogram(mapping = aes(x = house_income), bins = 4, fill = 'darkblue', col='gray')
+
+cov_3 <- ggplot(data = d) + 
+  geom_histogram(mapping = aes(x = education_level), bins = 4, fill = 'darkblue', col='gray')
+
+cov_4 <- ggplot(data = d) + 
+  geom_histogram(mapping = aes(x = gender), bins = 2, fill = 'darkblue', col='gray')
+
+cov_5 <- ggplot(data = d) + 
+  geom_histogram(mapping = aes(x = learn_anything), bins = 2, fill = 'darkblue', col='gray')
+```
+
+```{r}
+cov_1
+cov_2
+cov_3
+cov_4
+cov_5
+```
+
