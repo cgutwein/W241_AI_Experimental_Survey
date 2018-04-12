@@ -679,30 +679,48 @@ boxplot(AI_attitude_change ~ duration, data=d2, main= "duration")
 ```
 Attitude change histogram looks symmetric, the dependence on gender, house_income, learn_anything, attention_correct, duration seem to be not interesting.
 
-Interesting observations are the following (although effect small, not statistically significant)
+## Interesting dependences:
 
+Interesting observations from the EDA are the following (although effects are small):
+
+- People who are more educated seem to become more positive toward AI after taking the survey. 
+
+- Less educated people (assuming "other" are less educated) become more negative toward AI after taking the survey.
 
 ```{r}
 boxplot(AI_attitude_change ~ education_level, data=d2, main="education level")
+abline(h=0, col='red')
 ```
 
 People who were originally educated about AI seem to become less favorable toward AI after taking the survey:
 
 ```{r}
 boxplot(AI_attitude_change ~ AI_educated, data=d2, main="AI educated")
+abline(h=0, col='red')
 ```
 
-People who were originally positive towards AI seem to become less favorable toward AI after taking the survey:
+- People who were originally positive towards AI become less positive toward AI after taking the survey.
+
+- People who were originally negative towards AI become more positive toward AI after taking the survey.
 
 ```{r}
-boxplot(AI_attitude_change ~ AI_attitude, data=d2, main = "AI_attitude")
+boxplot(AI_attitude_change ~ AI_attitude, data=d2, main = '"AI_attitude_change" vs "AI_attitude"')
+abline(h=0, col='red')
 ```
 
-People's attitude change depends on treatment_type (the specific treatment questions they get) - this is the "fixed effects" we want to control?
+- People's attitude change strong depends on "treatment_type" (what treatment questions they get) - this is the "fixed effects" we want to control.
 
-```{r}
+
+
+```{r fig.height=5, fig.width=10, echo=FALSE}
 boxplot(AI_attitude_change ~ treatment_type, data=d2, main="AI attitude change vs. treatment type")
+abline(h=0, col='red')
 ```
+
+### Explanation of the "treatment_type" 
+
+For example,  code "00111" means the subject got control versions for questions 1 (undesirable) 2(jobs), and treatment versions for questions 3 (oversight), 4 (recommender), 5 (beneficial).
+
 
 ## 6.4 Regression for the "AI_attitude_change" variable:
 
