@@ -706,23 +706,51 @@ boxplot(AI_attitude_change ~ treatment_type, data=d2, main="AI attitude change v
 
 ## 6.4 Regression for the "AI_attitude_change" variable:
 
+First we try models without controlling for "treatment_type" fixed effects.
+
+Second, we try models with controlling for "treatment_type" fixed effects.
 
 ```{r, warning=FALSE}
-m.6.1 <- lm(AI_attitude_change ~ AI_attitude + AI_educated, data=d2)
+# models without controlling for "treatment_type" fixed effects
 
-m.6.2 <- lm(AI_attitude_change ~ education_level + house_income + gender, data=d2)
+m.6.1 <- lm(AI_attitude_change ~ AI_attitude, data=d2)
 
-m.6.3 <- lm(AI_attitude_change ~ AI_attitude + AI_educated 
-                 + education_level + house_income + gender, data=d2)
+m.6.2 <- lm(AI_attitude_change ~ AI_attitude + AI_educated, data=d2)
+
+m.6.3 <- lm(AI_attitude_change ~ education_level + house_income + gender, data=d2)
 
 m.6.4 <- lm(AI_attitude_change ~ AI_attitude + AI_educated 
-                 + education_level + house_income + gender + learn_anything , data=d2)
+                 + education_level + house_income + gender, data=d2)
 
 m.6.5 <- lm(AI_attitude_change ~ AI_attitude + AI_educated 
-                 + education_level + house_income + gender + learn_anything + duration_bin, data=d2)
+                 + education_level + house_income + gender + learn_anything , data=d2)
 
 m.6.6 <- lm(AI_attitude_change ~ AI_attitude + AI_educated 
+                 + education_level + house_income + gender + learn_anything + duration_bin, data=d2)
+
+m.6.7 <- lm(AI_attitude_change ~ AI_attitude + AI_educated 
+                 + education_level + house_income + gender + learn_anything + duration_bin + attention_correct, data=d2)
+
+# models with controlling for "treatment_type" fixed effects
+
+m.6.8 <- lm(AI_attitude_change ~ AI_attitude + treatment_type, data=d2)
+
+m.6.9 <- lm(AI_attitude_change ~ AI_attitude + AI_educated + treatment_type, data=d2)
+
+m.6.10 <- lm(AI_attitude_change ~ education_level + house_income + gender + treatment_type, data=d2)
+
+m.6.11 <- lm(AI_attitude_change ~ AI_attitude + AI_educated 
+                 + education_level + house_income + gender + treatment_type, data=d2)
+
+m.6.12 <- lm(AI_attitude_change ~ AI_attitude + AI_educated 
+                 + education_level + house_income + gender + learn_anything + treatment_type , data=d2)
+
+m.6.13 <- lm(AI_attitude_change ~ AI_attitude + AI_educated 
                  + education_level + house_income + gender + learn_anything + duration_bin + treatment_type, data=d2)
+
+m.6.14 <- lm(AI_attitude_change ~ AI_attitude + AI_educated 
+                 + education_level + house_income + gender + learn_anything + duration_bin + attention_correct + treatment_type, data=d2)
+
 
 se.m.6.1 = sqrt(diag(vcovHC(m.6.1)))
 se.m.6.2 = sqrt(diag(vcovHC(m.6.2)))
@@ -730,16 +758,27 @@ se.m.6.3 = sqrt(diag(vcovHC(m.6.3)))
 se.m.6.4 = sqrt(diag(vcovHC(m.6.4)))
 se.m.6.5 = sqrt(diag(vcovHC(m.6.5)))
 se.m.6.6 = sqrt(diag(vcovHC(m.6.6)))
+se.m.6.7 = sqrt(diag(vcovHC(m.6.7)))
+se.m.6.8 = sqrt(diag(vcovHC(m.6.8)))
+se.m.6.9 = sqrt(diag(vcovHC(m.6.9)))
+se.m.6.10 = sqrt(diag(vcovHC(m.6.10)))
+se.m.6.11 = sqrt(diag(vcovHC(m.6.11)))
+se.m.6.12 = sqrt(diag(vcovHC(m.6.12)))
+se.m.6.13 = sqrt(diag(vcovHC(m.6.13)))
+se.m.6.14 = sqrt(diag(vcovHC(m.6.14)))
 
-stargazer(m.6.1, m.6.2, m.6.3, m.6.4, m.6.5, m.6.6,   type = "text", 
-          se = list(se.m.6.1, se.m.6.2, se.m.6.3, se.m.6.4, se.m.6.5, se.m.6.6),
+
+stargazer(m.6.1, m.6.2, m.6.3, m.6.4, m.6.5, m.6.6, m.6.7, m.6.8, m.6.9, m.6.10, m.6.11, m.6.12, m.6.13, m.6.14,
+          type = "text", 
+          se = list(se.m.6.1, se.m.6.2, se.m.6.3, se.m.6.4, se.m.6.5, se.m.6.6, se.m.6.7, 
+                    se.m.6.8, se.m.6.9, se.m.6.10, se.m.6.11, se.m.6.12, se.m.6.13, se.m.6.14),
           title = "AI attitude change",
           omit.stat = c("f", "ser"),
           star.cutoffs = c(0.05,0.01,0.001))
 ```
 
 
-
+Second, we try models with controlling for "treatment_type" fixed effects:
 
 
 
