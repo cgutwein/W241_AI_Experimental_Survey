@@ -1,0 +1,107 @@
+---
+title: "Visuals"
+author: "Chet Gutwein"
+date: "April 16, 2018"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(data.table)
+library(dplyr)
+library(magrittr)
+library(ggplot2)
+library(gridExtra)
+library(ggExtra)
+## for the map plot
+library(ggmap)
+library(maps)
+library(mapdata)
+```
+
+```{r echo=FALSE}
+d <- fread('./Cleaned_Full_Survey_dataV2.csv')
+```
+
+
+## Collection of Visuals for Presentation & Final Report
+for MIDS W241 Project, "Attitude Towards Artificial Intelligence"
+
+#### Histograms
+In this section, we'll generate simple histograms for each covariate included our data.
+```{r}
+d_raw <- fread('./Filtering_Qualtrics_for_final_data/Filtered_Raw_Survey_data_04_05_2018.csv')
+```
+
+
+```{r}
+ggplot(data = d) + 
+  geom_histogram(mapping = aes(x = AI_educated), bins = 5, fill = 'darkblue', col='violet')+ 
+    labs(x= 'Rating (1 to 5)', title = 'How well educated are you about AI?')
+
+#ggsave('../documentation/images/hist_AI_educated.png')
+
+ggplot(data = d) + 
+  geom_histogram(mapping = aes(x = house_income), bins = 4, fill = 'darkblue', col='violet')+ labs(x= 'Annual in US Dollars', title = 'Household Income')
+
+#ggsave('../documentation/images/hist_house_income.png')
+
+ggplot(data = d) + 
+  geom_histogram(mapping = aes(x = education_level), bins = 5, fill = 'darkblue', col='violet')+ labs(title = 'Highest Education Completed')
+
+#ggsave('../documentation/images/hist_education_level.png')
+
+ggplot(data = d) + 
+  geom_histogram(mapping = aes(x = gender), fill = 'darkblue', col='violet', stat='count')+ labs(title = 'Gender')
+
+ggplot(data = d) + 
+  geom_histogram(mapping = aes(x = learn_anything), bins = 2, fill = 'darkblue', col='violet')+ labs(title = 'Did you learn anything?')
+
+```
+
+#### Copying ZH's Code for Control/Treatment Group
+
+```{r}
+d$treatment_type <- ""     # initialize a column with empty strings
+
+for (i in 1:nrow(d)) {
+  d[i]$treatment_type = paste(toString(d[i,"assignment_undesirable"]), 
+                               toString(d[i,"assignment_jobs"]), 
+                               toString(d[i,"assignment_oversight"]),
+                               toString(d[i,"assignment_recommender"]), 
+                               toString(d[i,"assignment_beneficial"]),
+                               sep="")
+  }
+
+```
+
+```{r}
+d$treatment_type <- as.factor(d$treatment_type)
+```
+```{r}
+library(sqldf)
+kable(sqldf('select treatment_type, avg("gender") as male, 1 - avg("gender") as female from d group by treatment_type'))
+```
+
+
+#### Map of Subjects
+We have some subjects who had locations outside of the United States. We're assuming that these are people who have MTurk accounts associated with addresses in the United States, but perhaps were travelling outside of the country when they completed the survey. To get a better resolution, we'll simply crop out lat/long values outside of the US.
+
+```{r}
+d_map <- d[d$LocationLatitude < 50 & d$LocationLatitude > 25]
+d_map <- d_map[d_map$LocationLongitude < -60 & d_map$LocationLongitude > -130]
+```
+
+
+```{r}
+usa <- map_data("usa")
+ggplot() + geom_polygon(data = usa, aes(x=long, y = lat, group = group)) + 
+  coord_fixed(1.3) + geom_point(data = d_map, aes(x = LocationLongitude, y = LocationLatitude), color = "violet", size = 1)
+```
+```{r}
+ggsave("../documentation/images/exp_map.png")
+```
+
