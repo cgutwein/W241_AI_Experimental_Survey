@@ -1,0 +1,699 @@
+---
+title: 'W241: AI Project Final Survey'
+subtitle: 'Data Cleaning, EDA, Regression'
+author: "Zhaoning Yu"
+date: "4/16/2018"
+output: pdf_document
+---
+
+# Summary: Things done in this Rmd:
+
+- Read data file "Cleaned_Full_Survey_dataV1.csv" into dataframe "d1"
+
+- Create a cleaned version "d2": 
+
+- Adding new variables for attention questions, binary variables for duration
+
+- Adding new variables for measuring subjects' attitude baseline and attitude change after the treatment
+
+- Data analysis I: treatment effect of each individual question
+
+- Data analysis II: treatment is "exposure to 3 balanced paragraphs", within-subject design, measure the change in attitude for each subject
+
+```{r setup, include=FALSE, message=FALSE}
+library(knitr)
+opts_chunk$set(tidy.opts=list(width.cutoff=60),tidy=TRUE)
+# knitr::opts_chunk$set(echo = TRUE)
+
+# load packages 
+library(Hmisc)              # describe()
+library(data.table)
+library(foreign)            # ??? what does this package do ????????
+library(sandwich)           # vcovHC for robust SE calculation
+library(lmtest)             # coeftest 
+library(AER)                # ivreg
+library(multiwayvcov)       # cluster.vcov()
+library(stargazer)          # regression tables
+```
+
+
+# 1. Read Data and Cleaning
+
+## 1.1 Read Data
+
+First read the cleaned full survey data from KH:
+
+```{r}
+rm(list=ls())
+
+d1 <- fread('./Cleaned_Full_Survey_dataV1.csv')
+head(d1)
+```
+
+### 1.2 Create a factor column for attention question 
+
+```{r}
+# create indicator vectors to indicate the attention question type
+t1 <- 1*!is.na(d1$attention_undesirable) 
+t2 <- 2*!is.na(d1$attention_jobs) 
+t3 <- 3*!is.na(d1$attention_oversight) 
+t4 <- 4*!is.na(d1$attention_recommender) 
+t5 <- 5*!is.na(d1$attention_beneficial) 
+
+# add a vector column for attention question
+d1$attention_question_code <- t1 + t2 + t3 + t4 + t5
+d1$attention_question <- as.factor(t1 + t2 + t3 + t4 + t5)
+
+# rename the levels
+levels(d1$attention_question)[levels(d1$attention_question)=="1"] <- "undesirable"
+levels(d1$attention_question)[levels(d1$attention_question)=="2"] <- "jobs"
+levels(d1$attention_question)[levels(d1$attention_question)=="3"] <- "oversight"
+levels(d1$attention_question)[levels(d1$attention_question)=="4"] <- "recommender"
+levels(d1$attention_question)[levels(d1$attention_question)=="5"] <- "beneficial"
+
+# levels(d1$attention_question)[levels(d1$attention_question)=="0"] <- "what"
+```
+
+## 1.3 Remove some columns and re-arrange:
+
+### Columns that are removed
+
+- "Progress" column has a single value of 100
+- "Finished" column has a single value of 1
+- "RecordedDate" column has the same information as "EndDate" (+1 second)
+
+### Note:
+
+- "Assignment_##" columns are indicator whether subject assigned to treatment or control for each question
+- "Score_##" columns are answers for the question (as control or treatment depending on assignment)
+
+```{r}
+d2 <- subset(d1, select=c(ResponseId, mTurkCode, 
+                          IPAddress, LocationLatitude, LocationLongitude,
+                          StartDate, EndDate, duration_seconds, 
+                          gender, education_level, house_income,
+                          AI_educated, AI_attitude, learn_anything,
+                          assignment_undesirable, assignment_jobs, assignment_oversight, assignment_recommender, assignment_beneficial,
+                          score_undesirable, score_jobs, score_oversight, score_recommender, score_beneficial,
+                          control_undesirable, control_jobs, control_oversight, control_recommender, control_beneficial,
+                          treat_undesirable, treat_jobs, treat_oversight, treat_recommender, treat_beneficial,
+                          attention_question_code, attention_question, attention_correct))
+
+# create a categorical variable for duration_seconds
+d2$duration = cut(d2$duration_seconds, breaks = c(0, 100, 500, Inf), 
+                 labels = c("short", "normal","long"))
+
+# create a binary variable to filter out both short and long survey takers
+d2$duration_bin = d2$duration=="normal"
+
+# str(d2)
+```
+
+## 1.4 Create variables for gauging subjects' attitude before and after treatment
+
+Note following survey questions:
+
+- Q1 (undesirable): How strongly do you feel that that widespread adoption of AI technology will have dangerous or undesirable consequences? 
+
+- Q2 (jobs): How concerned are you that widespread adoption of Artificial Intelligence will lead to major job losses across several employment sectors? 
+
+- Q3 (oversight): How strongly do you feel that regulatory oversight should be established prior to the widespread adoption of particular AI technologies?
+
+- Q4 (recommender): How likely are you to value a movie recommendation from Netflix over a friend or family member? 
+
+- Q5 (beneficial): How strongly do you feel that widespread adoption of AI technology will be beneficial to society? 
+
+**For Q1 (undesirable), Q2 (jobs), Q3 (oversight: positive change means less favorable attitude towards AI.**
+
+**For Q4 (recommender), Q5(beneficial): positive change means more favorable attitude towards AI.**
+
+
+```{r}
+# STEP1: create an "attitude" variable for each question: 
+# (1) range from (-2, -1, 0, 1, 2) based on each individual's answer; 
+# (2) positive means more favorable towards AI;
+
+d2$attitude_undesirable <- 3 - d2$score_undesirable
+d2$attitude_jobs <- 3 - d2$score_jobs
+d2$attitude_oversight <- 3 - d2$score_oversight
+
+d2$attitude_recommender <- d2$score_recommender - 3
+d2$attitude_beneficial <- d2$score_beneficial - 3
+
+# STEP2:  create variables for each individual's attidude 
+# for the treatment ("AI_attitude_treat") and control ("AI_attitude_control") questions:
+
+# sum of the attitude in 3 treatment questions
+d2$AI_attitude_treat <- d2$assignment_undesirable * d2$attitude_undesirable + 
+  d2$assignment_jobs * d2$attitude_jobs + d2$assignment_oversight * d2$attitude_oversight + 
+  d2$assignment_recommender * d2$attitude_recommender + d2$assignment_beneficial * d2$attitude_beneficial
+
+# sum of the attitude in 2 control questions
+d2$AI_attitude_control <- (1-d2$assignment_undesirable) * d2$attitude_undesirable + 
+  (1-d2$assignment_jobs) * d2$attitude_jobs + (1-d2$assignment_oversight) * d2$attitude_oversight + 
+  (1-d2$assignment_recommender) * d2$attitude_recommender + (1-d2$assignment_beneficial) * d2$attitude_beneficial
+
+# normalize by number of questions to get attitude
+d2$AI_attitude_treat <- round(d2$AI_attitude_treat/3, 3)                 # divide by 3 because 3 treatment questions
+d2$AI_attitude_control <- round(d2$AI_attitude_control/2, 3)             # divide by 2 because 2 treatment questions
+
+ # difference in attitude between treatment and control questions
+d2$AI_attitude_change <- d2$AI_attitude_treat - d2$AI_attitude_control  
+
+# STEP3:  reate a variable for treatment types that each individual get. 
+
+# Since there are 5 questions, each subject get 2 control and 3 treatment questions, 
+# there are only (5x4)/(1x2) = 10 possible combinations.
+
+# For example, for the first subject, treatment questions are 1(undesirable), 2(jobs), 4(recommender), 
+# so the "treatment_type" is coded "11010"
+
+d2$treatment_type <- ""     # initialize a column with empty strings
+
+# populate the treatment_type column with treatment type code such as "01011" ...
+
+for (i in 1:nrow(d2)) {
+  d2[i]$treatment_type = paste(toString(d2[i,"assignment_undesirable"]), 
+                               toString(d2[i,"assignment_jobs"]), 
+                               toString(d2[i,"assignment_oversight"]),
+                               toString(d2[i,"assignment_recommender"]), 
+                               toString(d2[i,"assignment_beneficial"]),
+                               sep="")
+}
+
+```
+
+## 1.5 Write dataframe to csv and check result
+
+```{r}
+# write.csv(d2, 'Cleaned_Full_Survey_dataV2.csv', row.names=FALSE)
+```
+
+# 2. Data Analysis I: treatment effect of each individual question
+
+In the following regression models, we control for the following and compare different specifications:
+
+- "AI_attitude", "AI_educated": to control for people's attitude toward AI before taking the survey
+
+- "gender", "education_level", "house_income": to control for demographic characteristics
+
+- "learn_anything", "duration_bin": to control for people's attention level for taking the survey
+
+
+## 2.1 AI_Q1: undesirable
+
+**Q1: How strongly do you feel that that widespread adoption of AI technology will have dangerous or undesirable consequences?**
+
+Treatment of Q1 makes people less concerned about AI, but the difference is small and statistcally insignificant after controlling for other variables.
+
+The effect is bigger for people who originally had more positive feeling toward AI.
+
+```{r fig.height=3.5, fig.width=10, echo=FALSE}
+mean(d2[d2$assignment_undesirable==0]$score_undesirable)
+mean(d2[d2$assignment_undesirable==1]$score_undesirable)
+
+t.test(d2[d2$assignment_undesirable==0]$score_undesirable, d2[d2$assignment_undesirable==1]$score_undesirable)
+wilcox.test(d2[d2$assignment_undesirable==0]$score_undesirable, d2[d2$assignment_undesirable==1]$score_undesirable)
+
+par(mfrow=c(1,3))
+hist(d2[d2$assignment_undesirable==0]$score_undesirable)
+hist(d2[d2$assignment_undesirable==1]$score_undesirable)
+boxplot(score_undesirable ~ assignment_undesirable, data=d2)
+```
+
+```{r, warning=FALSE}
+m.1.1 <- lm(score_undesirable ~ assignment_undesirable, data=d2)
+#coeftest(m.1.1, vcov = vcovHC)
+
+m.1.2 <- lm(score_undesirable ~ assignment_undesirable + AI_attitude + AI_educated, data=d2)
+#coeftest(m.1.2, vcov = vcovHC)
+
+m.1.3 <- lm(score_undesirable ~ assignment_undesirable + education_level + house_income + gender, data=d2)
+#coeftest(m.1.3, vcov = vcovHC)
+
+m.1.4 <- lm(score_undesirable ~ assignment_undesirable + AI_attitude + AI_educated 
+                 + education_level + house_income + gender, data=d2)
+#coeftest(m.1.4, vcov = vcovHC)
+
+m.1.5 <- lm(score_undesirable ~ assignment_undesirable + AI_attitude + AI_educated 
+                 + education_level + house_income + gender + learn_anything , data=d2)
+#coeftest(m.1.5, vcov = vcovHC)
+
+m.1.6 <- lm(score_undesirable ~ assignment_undesirable + AI_attitude + AI_educated 
+                 + education_level + house_income + gender + learn_anything + duration_bin, data=d2)
+#coeftest(m.1.6, vcov = vcovHC)
+
+se.m.1.1 = sqrt(diag(vcovHC(m.1.1)))
+se.m.1.2 = sqrt(diag(vcovHC(m.1.2)))
+se.m.1.3 = sqrt(diag(vcovHC(m.1.3)))
+se.m.1.4 = sqrt(diag(vcovHC(m.1.4)))
+se.m.1.5 = sqrt(diag(vcovHC(m.1.5)))
+se.m.1.6 = sqrt(diag(vcovHC(m.1.6)))
+
+stargazer(m.1.1, m.1.2, m.1.3, m.1.4, m.1.5, m.1.6,  type = "text", 
+          se = list(se.m.1.1, se.m.1.2, se.m.1.3, se.m.1.4, se.m.1.5, se.m.1.6),
+          title = "undesirable",
+          omit.stat = c("f", "ser"),
+          star.cutoffs = c(0.05,0.01,0.001))
+# type = "text"
+```
+
+## 2.2 AI_Q2: jobs
+
+**Q2: How concerned are you that widespread adoption of Artificial Intelligence will lead to major job losses across several employment sectors?**
+
+Treatment of Q2 makes people less concerned about AI on jobs, but the difference is small but statistcally significant after controlling for other variables.
+
+The effect is bigger for people who originally had more positive feeling toward AI.
+
+```{r fig.height=3.5, fig.width=10, echo=FALSE}
+mean(d2[d2$assignment_jobs==0]$score_jobs)
+mean(d2[d2$assignment_jobs==1]$score_jobs)
+
+t.test(d2[d2$assignment_jobs==0]$score_jobs, d2[d2$assignment_jobs==1]$score_jobs)
+wilcox.test(d2[d2$assignment_jobs==0]$score_jobs, d2[d2$assignment_jobs==1]$score_jobs)
+
+par(mfrow=c(1,3))
+hist(d2[d2$assignment_jobs==0]$score_jobs)
+hist(d2[d2$assignment_jobs==1]$score_jobs)
+boxplot(score_jobs ~ assignment_jobs, data=d2)
+```
+
+```{r, warning=FALSE}
+m.2.1 <- lm(score_jobs ~ assignment_jobs, data=d2)
+
+m.2.2 <- lm(score_jobs ~ assignment_jobs + AI_attitude + AI_educated, data=d2)
+
+m.2.3 <- lm(score_jobs ~ assignment_jobs + education_level + house_income + gender, data=d2)
+
+m.2.4 <- lm(score_jobs ~ assignment_jobs + AI_attitude + AI_educated 
+                 + education_level + house_income + gender, data=d2)
+
+m.2.5 <- lm(score_jobs ~ assignment_jobs + AI_attitude + AI_educated 
+                 + education_level + house_income + gender + learn_anything , data=d2)
+
+m.2.6 <- lm(score_jobs ~ assignment_jobs + AI_attitude + AI_educated 
+                 + education_level + house_income + gender + learn_anything + duration_bin, data=d2)
+
+se.m.2.1 = sqrt(diag(vcovHC(m.2.1)))
+se.m.2.2 = sqrt(diag(vcovHC(m.2.2)))
+se.m.2.3 = sqrt(diag(vcovHC(m.2.3)))
+se.m.2.4 = sqrt(diag(vcovHC(m.2.4)))
+se.m.2.5 = sqrt(diag(vcovHC(m.2.5)))
+se.m.2.6 = sqrt(diag(vcovHC(m.2.6)))
+
+stargazer(m.2.1, m.2.2, m.2.3, m.2.4, m.2.5, m.2.6,  type = "text", 
+          se = list(se.m.2.1, se.m.2.2, se.m.2.3, se.m.2.4, se.m.2.5, se.m.2.6),
+          title = "jobs",
+          omit.stat = c("f", "ser"),
+          star.cutoffs = c(0.05,0.01,0.001))
+```
+
+
+## 2.3 AI_Q3: oversight
+
+**Q3: How strongly do you feel that regulatory oversight should be established prior to the widespread adoption of particular AI technologies? **
+
+Treatment and control are not significantly different,  the treatment is higher.
+
+```{r fig.height=3.5, fig.width=10, echo=FALSE}
+mean(d2[d2$assignment_oversight==0]$score_oversight)
+mean(d2[d2$assignment_oversight==1]$score_oversight)
+
+t.test(d2[d2$assignment_oversight==0]$score_oversight, d2[d2$assignment_oversight==1]$score_oversight)
+wilcox.test(d2[d2$assignment_oversight==0]$score_oversight, d2[d2$assignment_oversight==1]$score_oversight)
+
+par(mfrow=c(1,3))
+hist(d2[d2$assignment_oversight==0]$score_oversight)
+hist(d2[d2$assignment_oversight==1]$score_oversight)
+boxplot(score_oversight ~ assignment_oversight, data=d2)
+```
+
+
+```{r, warning=FALSE}
+m.3.1 <- lm(score_oversight ~ assignment_oversight, data=d2)
+
+m.3.2 <- lm(score_oversight ~ assignment_oversight + AI_attitude + AI_educated, data=d2)
+
+m.3.3 <- lm(score_oversight ~ assignment_oversight + education_level + house_income + gender, data=d2)
+
+m.3.4 <- lm(score_oversight ~ assignment_oversight + AI_attitude + AI_educated 
+                 + education_level + house_income + gender, data=d2)
+
+m.3.5 <- lm(score_oversight ~ assignment_oversight + AI_attitude + AI_educated 
+                 + education_level + house_income + gender + learn_anything , data=d2)
+
+m.3.6 <- lm(score_oversight ~ assignment_oversight + AI_attitude + AI_educated 
+                 + education_level + house_income + gender + learn_anything + duration_bin, data=d2)
+
+se.m.3.1 = sqrt(diag(vcovHC(m.3.1)))
+se.m.3.2 = sqrt(diag(vcovHC(m.3.2)))
+se.m.3.3 = sqrt(diag(vcovHC(m.3.3)))
+se.m.3.4 = sqrt(diag(vcovHC(m.3.4)))
+se.m.3.5 = sqrt(diag(vcovHC(m.3.5)))
+se.m.3.6 = sqrt(diag(vcovHC(m.3.6)))
+
+stargazer(m.3.1, m.3.2, m.3.3, m.3.4, m.3.5, m.3.6, type = "text", 
+          se = list(se.m.3.1, se.m.3.2, se.m.3.3, se.m.3.4, se.m.3.5, se.m.3.6),
+          title = "oversight",
+          omit.stat = c("f", "ser"),
+          star.cutoffs = c(0.05,0.01,0.001))
+```
+
+
+## 2.4 AI_Q4: recommender
+
+**Q4: How likely are you to value a movie recommendation from Netflix over a friend or family member?**
+
+Treatment and control are not significantly different, the treatment is lower.
+
+```{r fig.height=3.5, fig.width=10, echo=FALSE}
+mean(d2[d2$assignment_recommender==0]$score_recommender)
+mean(d2[d2$assignment_recommender==1]$score_recommender)
+
+t.test(d2[d2$assignment_recommender==0]$score_recommender, d2[d2$assignment_recommender==1]$score_recommender)
+wilcox.test(d2[d2$assignment_recommender==0]$score_recommender, d2[d2$assignment_recommender==1]$score_recommender)
+
+par(mfrow=c(1,3))
+hist(d2[d2$assignment_recommender==0]$score_recommender)
+hist(d2[d2$assignment_recommender==1]$score_recommender)
+boxplot(score_recommender ~ assignment_recommender, data=d2)
+```
+
+```{r, warning=FALSE}
+m.4.1 <- lm(score_recommender ~ assignment_recommender, data=d2)
+
+m.4.2 <- lm(score_recommender ~ assignment_recommender + AI_attitude + AI_educated, data=d2)
+
+m.4.3 <- lm(score_recommender ~ assignment_recommender + education_level + house_income + gender, data=d2)
+
+m.4.4 <- lm(score_recommender ~ assignment_recommender + AI_attitude + AI_educated 
+                 + education_level + house_income + gender, data=d2)
+
+m.4.5 <- lm(score_recommender ~ assignment_recommender + AI_attitude + AI_educated 
+                 + education_level + house_income + gender + learn_anything , data=d2)
+
+m.4.6 <- lm(score_recommender ~ assignment_recommender + AI_attitude + AI_educated 
+                 + education_level + house_income + gender + learn_anything + duration_bin, data=d2)
+
+se.m.4.1 = sqrt(diag(vcovHC(m.4.1)))
+se.m.4.2 = sqrt(diag(vcovHC(m.4.2)))
+se.m.4.3 = sqrt(diag(vcovHC(m.4.3)))
+se.m.4.4 = sqrt(diag(vcovHC(m.4.4)))
+se.m.4.5 = sqrt(diag(vcovHC(m.4.5)))
+se.m.4.6 = sqrt(diag(vcovHC(m.4.6)))
+
+stargazer(m.4.1, m.4.2, m.4.3, m.4.4, m.4.5, m.4.6,  type = "text", 
+          se = list(se.m.4.1, se.m.4.2, se.m.4.3, se.m.4.4, se.m.4.5, se.m.4.6),
+          title = "recommender",
+          omit.stat = c("f", "ser"),
+          star.cutoffs = c(0.05,0.01,0.001))
+```
+
+## 2.5 AI_Q5: beneficial
+
+**Q5: How strongly do you feel that widespread adoption of AI technology will be beneficial to society?**
+
+Treatment and control are not significantly different, the treatment is lower.
+
+```{r fig.height=3.5, fig.width=10, echo=FALSE}
+mean(d2[d2$assignment_beneficial==0]$score_beneficial)
+mean(d2[d2$assignment_beneficial==1]$score_beneficial)
+
+t.test(d2[d2$assignment_beneficial==0]$score_beneficial, d2[d2$assignment_beneficial==1]$score_beneficial)
+wilcox.test(d2[d2$assignment_beneficial==0]$score_beneficial, d2[d2$assignment_beneficial==1]$score_beneficial)
+
+par(mfrow=c(1,3))
+hist(d2[d2$assignment_beneficial==0]$score_beneficial)
+hist(d2[d2$assignment_beneficial==1]$score_beneficial)
+boxplot(score_beneficial ~ assignment_beneficial, data=d2)
+```
+
+```{r, warning=FALSE}
+m.5.1 <- lm(score_beneficial ~ assignment_beneficial, data=d2)
+
+m.5.2 <- lm(score_beneficial ~ assignment_beneficial + AI_attitude + AI_educated, data=d2)
+
+m.5.3 <- lm(score_beneficial ~ assignment_beneficial + education_level + house_income + gender, data=d2)
+
+m.5.4 <- lm(score_beneficial ~ assignment_beneficial + AI_attitude + AI_educated 
+                 + education_level + house_income + gender, data=d2)
+
+m.5.5 <- lm(score_beneficial ~ assignment_beneficial + AI_attitude + AI_educated 
+                 + education_level + house_income + gender + learn_anything , data=d2)
+
+m.5.6 <- lm(score_beneficial ~ assignment_beneficial + AI_attitude + AI_educated 
+                 + education_level + house_income + gender + learn_anything + duration_bin , data=d2)
+
+se.m.5.1 = sqrt(diag(vcovHC(m.5.1)))
+se.m.5.2 = sqrt(diag(vcovHC(m.5.2)))
+se.m.5.3 = sqrt(diag(vcovHC(m.5.3)))
+se.m.5.4 = sqrt(diag(vcovHC(m.5.4)))
+se.m.5.5 = sqrt(diag(vcovHC(m.5.5)))
+se.m.5.6 = sqrt(diag(vcovHC(m.5.6)))
+
+stargazer(m.5.1, m.5.2, m.5.3, m.5.4, m.5.5, m.5.6,   type = "text", 
+          se = list(se.m.5.1, se.m.5.2, se.m.5.3, se.m.5.4, se.m.5.5, se.m.5.6),
+          title = "beneficial",
+          omit.stat = c("f", "ser"),
+          star.cutoffs = c(0.05,0.01,0.001))
+```
+
+
+# 3. Data Analysis II: effect of 3 questions on each subject's attitude 
+
+Also for each treatment type, ~100 subjects, the assignment is balanced.
+
+```{r}
+table(d2$treatment_type)
+```
+
+#### Explanation of the "treatment_type" 
+
+For example,  code "00111" means the subject got control versions for questions 1 (undesirable) 2(jobs), and treatment versions for questions 3 (oversight), 4 (recommender), 5 (beneficial).
+
+## 3.1 EDA 
+
+### 3.1.1 Means 
+
+Mean of "AI_attitude_control" is -0.2778 and is significantly different from 0 with p-value = 2.2e-16.
+
+Mean of "AI_attitude_treat" is -0.2691 and is significantly different from 0 with p-value = 2.2e-16.
+
+Mean of "AI_attitude_change" is 0.0087 but is not significantly with p-value = 0.7618.
+
+```{r fig.height=3.5, fig.width=10, echo=FALSE}
+t.test(d2$AI_attitude_control)
+t.test(d2$AI_attitude_treat)
+t.test(d2$AI_attitude_change)
+
+par(mfrow=c(1,3))
+hist(d2$AI_attitude_control, breaks=12, main="AI_attitude_control", col = "yellow")
+hist(d2$AI_attitude_treat, breaks=12, main="AI_attitude_treat", col= "green")
+hist(d2$AI_attitude_change, breaks=20, main="AI_attitude_change", col = "blue")
+```
+
+### 3.1.2 Interesting dependencies:
+
+- No difference in attitude change between male and female.
+
+- People who are more educated seem to become more positive toward AI after taking the survey. 
+
+- Less educated people (assuming "other" are less educated) become more negative toward AI after taking the survey.
+
+```{r fig.height=3.5, fig.width=10, echo=FALSE}
+par(mfrow=c(1,3))
+
+boxplot(AI_attitude_change ~ gender, data=d2, main="gender")
+abline(h=0, col='red')
+
+boxplot(AI_attitude_change ~ education_level, data=d2, main="education level")
+abline(h=0, col='red')
+
+boxplot(AI_attitude_change ~ house_income, data=d2, main="household income")
+abline(h=0, col='red')
+```
+
+People who were originally educated about AI seem to become less favorable toward AI after taking the survey:
+
+- People who were originally positive towards AI become less positive toward AI after taking the survey.
+
+- People who were originally negative towards AI become more positive toward AI after taking the survey.
+
+```{r fig.height=3.5, fig.width=10, echo=FALSE}
+par(mfrow=c(1,2))
+
+boxplot(AI_attitude_change ~ AI_educated, data=d2, main="AI educated")
+abline(h=0, col='red')
+
+boxplot(AI_attitude_change ~ AI_attitude, data=d2, main = '"AI_attitude_change" vs "AI_attitude"')
+abline(h=0, col='red')
+```
+
+- People's attitude change strong depends on "treatment_type" (what treatment questions they get) - this is the "fixed effects" we want to control.
+
+```{r fig.height=4, fig.width=10, echo=FALSE}
+boxplot(AI_attitude_change ~ treatment_type, data=d2, main="AI attitude change vs. treatment type")
+abline(h=0, col='red')
+```
+
+```{r fig.height=3.5, fig.width=10, echo=FALSE}
+#cor(d2$AI_attitude, d2$AI_attitude_control)         # NA
+#cor(d2$AI_attitude_treat, d2$AI_attitude_control)   # 0.3721
+
+par(mfrow=c(1,2))
+boxplot(AI_attitude_treat~AI_attitude_control, data=d2, xlab="AI_attitude_control", ylab="AI_attitude_treat")
+boxplot(AI_attitude ~ AI_attitude_control, data=d2, xlab="AI_attitude_control", ylab="AI_attitude")
+```
+
+```{r fig.height=3.5, fig.width=10, echo=FALSE}
+par(mfrow=c(1,2))
+boxplot(AI_attitude_change ~ AI_attitude_control, data=d2, xlab="AI_attitude_control", ylab="AI_attitude_change")
+boxplot(AI_attitude_change ~ AI_attitude_treat, data=d2, xlab="AI_attitude_treat", ylab="AI_attitude_change")
+```
+
+## Comment:
+
+The dependence on "AI_attitude_control" and "AI_attitude_treat" should be expected, because AI_attitude_change is defined as $AI\_attitude\_change = AI\_attitude_treat-AI\_attitude\_control$.
+
+
+## 3.2 Regression
+
+### 3.2.1 Regression I
+
+```{r, warning=FALSE}
+
+# d2$AI_attitude <- d2$AI_attitude -3
+
+# models without controlling for "treatment_type" fixed effects
+
+m.6.1 <- lm(AI_attitude_change ~ AI_attitude, data=d2)
+
+m.6.2 <- lm(AI_attitude_change ~ AI_attitude + AI_educated, data=d2)
+
+m.6.3 <- lm(AI_attitude_change ~ education_level + house_income + gender, data=d2)
+
+m.6.4 <- lm(AI_attitude_change ~ AI_attitude + AI_educated 
+                 + education_level + house_income + gender, data=d2)
+
+m.6.5 <- lm(AI_attitude_change ~ AI_attitude + AI_educated 
+                 + education_level + house_income + gender + learn_anything , data=d2)
+
+m.6.6 <- lm(AI_attitude_change ~ AI_attitude + AI_educated 
+                 + education_level + house_income + gender + learn_anything + duration_bin, data=d2)
+
+m.6.7 <- lm(AI_attitude_change ~ AI_attitude + AI_educated 
+                 + education_level + house_income + gender + learn_anything + duration_bin + attention_correct, data=d2)
+
+# models with controlling for "treatment_type" fixed effects
+
+m.6.8 <- lm(AI_attitude_change ~ AI_attitude + treatment_type, data=d2)
+
+m.6.9 <- lm(AI_attitude_change ~ AI_attitude + AI_educated + treatment_type, data=d2)
+
+m.6.10 <- lm(AI_attitude_change ~ education_level + house_income + gender + treatment_type, data=d2)
+
+m.6.11 <- lm(AI_attitude_change ~ AI_attitude + AI_educated 
+                 + education_level + house_income + gender + treatment_type, data=d2)
+
+m.6.12 <- lm(AI_attitude_change ~ AI_attitude + AI_educated 
+                 + education_level + house_income + gender + learn_anything + treatment_type , data=d2)
+
+m.6.13 <- lm(AI_attitude_change ~ AI_attitude + AI_educated 
+                 + education_level + house_income + gender + learn_anything + duration_bin + treatment_type, data=d2)
+
+m.6.14 <- lm(AI_attitude_change ~ AI_attitude + AI_educated 
+                 + education_level + house_income + gender + learn_anything + duration_bin + attention_correct + treatment_type, data=d2)
+
+
+se.m.6.1 = sqrt(diag(vcovHC(m.6.1)))
+se.m.6.2 = sqrt(diag(vcovHC(m.6.2)))
+se.m.6.3 = sqrt(diag(vcovHC(m.6.3)))
+se.m.6.4 = sqrt(diag(vcovHC(m.6.4)))
+se.m.6.5 = sqrt(diag(vcovHC(m.6.5)))
+se.m.6.6 = sqrt(diag(vcovHC(m.6.6)))
+se.m.6.7 = sqrt(diag(vcovHC(m.6.7)))
+se.m.6.8 = sqrt(diag(vcovHC(m.6.8)))
+se.m.6.9 = sqrt(diag(vcovHC(m.6.9)))
+se.m.6.10 = sqrt(diag(vcovHC(m.6.10)))
+se.m.6.11 = sqrt(diag(vcovHC(m.6.11)))
+se.m.6.12 = sqrt(diag(vcovHC(m.6.12)))
+se.m.6.13 = sqrt(diag(vcovHC(m.6.13)))
+se.m.6.14 = sqrt(diag(vcovHC(m.6.14)))
+
+
+stargazer(m.6.1, m.6.2, m.6.3, m.6.4, m.6.5, m.6.6, m.6.7, m.6.8, m.6.9, m.6.10, m.6.11, m.6.12, m.6.13, m.6.14,
+          type = "text", 
+          se = list(se.m.6.1, se.m.6.2, se.m.6.3, se.m.6.4, se.m.6.5, se.m.6.6, se.m.6.7, 
+                    se.m.6.8, se.m.6.9, se.m.6.10, se.m.6.11, se.m.6.12, se.m.6.13, se.m.6.14),
+          title = "AI attitude change",
+          omit.stat = c("f", "ser"),
+          star.cutoffs = c(0.05,0.01,0.001))
+```
+
+
+
+
+```{r}
+plot(m.6.14)
+```
+
+## generate a table for the paper
+
+```{r, warning=FALSE}
+stargazer(m.6.8, m.6.9, m.6.11, m.6.12, m.6.13, m.6.14,
+          type = "text", 
+          se = list(se.m.6.8, se.m.6.9, se.m.6.11, se.m.6.12, se.m.6.13, se.m.6.14),
+          title = "AI attitude change",
+          omit.stat = c("f", "ser"),
+          star.cutoffs = c(0.05,0.01,0.001))
+```
+
+
+
+# 4. Regression II
+
+- Due to the definiation of "AI_attitude_change = AI_attitude_treat - AI_attitude_control", adding both "AI_attitude_control" and "AI_attitude_treat" to the specification will totally absorb the effect and yield coefficients -1 and 1 for these two variables. 
+
+- The following regression may not be sensible, because "AI_attitude_change" is defined by "AI_attitude_treat - AI_attitude_control", so the large negative coefficient for "AI_attitude_control" and the large positive coefficient for "AI_attitude_treat" should be expected.
+
+```{r}
+m.7.1 <- lm(AI_attitude_change ~  AI_attitude_control,  data=d2)
+
+m.7.2 <- lm(AI_attitude_change ~  AI_attitude_control + AI_attitude, data=d2)
+
+m.7.3 <- lm(AI_attitude_change ~  AI_attitude_control + AI_attitude + AI_educated, data=d2)
+
+m.7.4 <- lm(AI_attitude_change ~  AI_attitude_control + AI_attitude + AI_educated +
+              + education_level + house_income + gender + learn_anything + duration_bin + attention_correct, data=d2)
+
+m.7.5 <- lm(AI_attitude_change ~  AI_attitude_control + AI_attitude + AI_educated +
+              + education_level + house_income + gender + learn_anything + duration_bin + attention_correct + treatment_type, data=d2)
+
+m.7.6 <- lm(AI_attitude_change ~  AI_attitude_control + AI_attitude_treat + AI_attitude + AI_educated +
+              + education_level + house_income + gender + learn_anything + duration_bin + attention_correct + treatment_type, data=d2)
+
+se.m.7.1 = sqrt(diag(vcovHC(m.7.1)))
+se.m.7.2 = sqrt(diag(vcovHC(m.7.2)))
+se.m.7.3 = sqrt(diag(vcovHC(m.7.3)))
+se.m.7.4 = sqrt(diag(vcovHC(m.7.4)))
+se.m.7.5 = sqrt(diag(vcovHC(m.7.5)))
+se.m.7.6 = sqrt(diag(vcovHC(m.7.6)))
+
+stargazer(m.7.1, m.7.2, m.7.3, m.7.4, m.7.5, m.7.6,
+          type = "text", 
+          se = list(se.m.7.1, se.m.7.2, se.m.7.3, se.m.7.4, se.m.7.5, se.m.7.6),
+          title = "AI attitude change",
+          omit.stat = c("f", "ser"),
+          star.cutoffs = c(0.05,0.01,0.001))
+
+```
+
+```{r}
+plot(m.7.5)
+```
+```{r}
+table(d2$AI_attitude)
+hist(d2$AI_attitude)
+```
+
