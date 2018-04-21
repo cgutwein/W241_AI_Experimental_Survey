@@ -105,3 +105,90 @@ ggplot() + geom_polygon(data = usa, aes(x=long, y = lat, group = group)) +
 ggsave("../documentation/images/exp_map.png")
 ```
 
+#### Creating Density Plots for Histograms
+
+```{r}
+d$assignment_oversight <- as.factor(d$assignment_oversight)
+g1 <- d %>%
+    ggplot(aes(x = score_oversight, fill = assignment_oversight)) +
+    geom_density(alpha = 0.7) +
+    scale_fill_manual(values = c('darkblue', 'grey')) + 
+    labs(x = 'Score', y = '', title = 'Does AI require regulatory oversight?')
+
+d$assignment_beneficial <- as.factor(d$assignment_beneficial)
+g2 <- d %>%
+    ggplot(aes(x = score_beneficial, fill = assignment_beneficial)) +
+    geom_density(alpha = 0.7) +
+    scale_fill_manual(values = c('darkblue', 'grey')) + 
+    labs(x = 'Score', y = '', title = 'Will AI prove beneficial to society?')
+
+d$assignment_undesirable <- as.factor(d$assignment_undesirable)
+g3 <- d %>%
+    ggplot(aes(x = score_undesirable, fill = assignment_undesirable)) +
+    geom_density(alpha = 0.7) +
+    scale_fill_manual(values = c('darkblue', 'grey')) + 
+    labs(x = 'Score', y = '', title = 'Will AI have undesirable consequences?')
+
+d$assignment_jobs <- as.factor(d$assignment_jobs)
+g4 <- d %>%
+    ggplot(aes(x = score_jobs, fill = assignment_jobs)) +
+    geom_density(alpha = 0.7) +
+    scale_fill_manual(values = c('darkblue', 'grey')) + 
+    labs(x = 'Score', y = '', title = 'Will AI threaten your job security?')
+
+d$assignment_recommender <- as.factor(d$assignment_recommender)
+g5 <- d %>%
+    ggplot(aes(x = score_recommender, fill = assignment_recommender)) +
+    geom_density(alpha = 0.7) +
+    scale_fill_manual(values = c('darkblue', 'grey')) + 
+    labs(x = 'Score', y = '', title = 'Do you favor recommender system over a friend?')
+```
+
+#### Oversight
+```{r}
+g1
+ggsave("../documentation/images/density_oversight.png")
+```
+
+#### Beneficial
+```{r}
+g2
+#ggsave("../documentation/images/density_beneficial.png")
+hist(d$score_jobs[d$assignment_jobs == 0])
+hist(d$score_jobs[d$assignment_jobs == 1])
+```
+
+#### Undesirable
+```{r}
+g3
+ggsave("../documentation/images/density_undesirable.png")
+```
+
+#### Jobs
+```{r}
+
+ggplot(data = d[,d$assignment_jobs ==0]) +
+  geom_bar(mapping = aes(x = score_jobs))
+#ggsave("../documentation/images/density_jobs.png")
+```
+
+#### Recommender
+```{r}
+g5
+ggsave("../documentation/images/density_recommender.png")
+```
+
+## Attention Questions vs. Time
+
+```{r}
+times <- c(30, 60, 90, 120, 150, 180)
+att_30 <- mean(d$attention_correct[d$duration_seconds <=30])
+att_60 <- mean(d$attention_correct[(d$duration_seconds <=60) & (d$duration_seconds > 30)], na.rm = TRUE)
+att_90 <- mean(d$attention_correct[(d$duration_seconds <=90) & (d$duration_seconds > 60)], na.rm = TRUE)
+att_120 <- mean(d$attention_correct[(d$duration_seconds <=120) & (d$duration_seconds > 90)], na.rm = TRUE)
+att_150 <- mean(d$attention_correct[(d$duration_seconds <=150) & (d$duration_seconds > 120)], na.rm = TRUE)
+att_180 <- mean(d$attention_correct[(d$duration_seconds <=180) & (d$duration_seconds > 150)], na.rm = TRUE)
+att <- c(att_30, att_60, att_90, att_120, att_150, att_180)
+plot(times, att, xlab = "Time (seconds)", ylab = "Compliance (%)", main="Compliance percentage vs. Duration")
+```
+
